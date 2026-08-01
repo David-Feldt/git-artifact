@@ -77,7 +77,17 @@ const vite = spawn('npx', ['vite', '--port', String(CLIENT_PORT)], {
 
 console.log(`\n  dev: client on http://localhost:${CLIENT_PORT}, daemon on ${DAEMON_PORT}`)
 console.log(`  watching ${repo}\n`)
-console.log('  The daemon prints its URL with a token — open that one.\n')
+/*
+ * Say which URL to open, and be right about it.
+ *
+ * The daemon prints a URL with a token, but in dev it does not serve the client at all —
+ * Vite does, and `/` on the daemon is a 404. Pointing at the daemon's URL sent you to the
+ * one address that cannot work. Take its token and put it on the Vite origin instead.
+ */
+console.log(
+  `  Open http://localhost:${CLIENT_PORT}/?t=<token>, taking the token from the daemon's`,
+)
+console.log('  URL below. The daemon itself does not serve the client in dev.\n')
 
 const shutdown = async () => {
   daemon?.kill('SIGTERM')
