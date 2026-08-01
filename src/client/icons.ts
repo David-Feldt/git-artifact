@@ -31,6 +31,15 @@ export const MONITOR_PATHS: readonly string[] = [
 ]
 
 /**
+ * Lucide `x`. Marks a session with no recent transcript activity.
+ *
+ * Two strokes and nothing else, which is what makes it legible beside the monitor at 14px
+ * where a glyph with interior detail — a circled cross, a power symbol — turns to mush. It
+ * reads as a state on the icon it follows rather than as a second subject.
+ */
+export const X_PATHS: readonly string[] = ['M18 6 6 18', 'm6 6 12 12']
+
+/**
  * Lucide `chart-network`. Marks generating an artifact.
  *
  * Three nodes joined by edges over an axis — the same thing the graph beside it draws, and

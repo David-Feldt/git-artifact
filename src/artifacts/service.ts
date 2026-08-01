@@ -2,7 +2,8 @@ import type { GraphPayload, PushMarker, SessionBandInfo } from '../api.js'
 import type { GraphStore } from '../server/store.js'
 import { buildBrief, DEFAULT_BUDGET, type Brief, type Budget } from './bundle.js'
 import { artifactKey, cachePath, readCached, writeCached } from './cache.js'
-import { generatePage, HarnessError, type HarnessName } from './harness.js'
+import { renderArtifactPage } from './chassis.js'
+import { generateAnalysis, HarnessError, type HarnessName } from './harness.js'
 
 /**
  * Turning a sha into a page.
@@ -98,9 +99,9 @@ export class ArtifactService {
     const cached = await readCached(repoRoot, key)
     if (cached !== null) return { state: 'ready', key, path: cachePath(repoRoot, key) }
 
-    let html: string
+    let analysis: string
     try {
-      html = await generatePage(brief.text, {
+      analysis = await generateAnalysis(brief.text, {
         harness: this.options.harness,
         model: this.options.model,
       })
@@ -108,6 +109,15 @@ export class ArtifactService {
       if (err instanceof HarnessError) return this.fail(sha, err.message, err.detail)
       return this.fail(sha, 'Generation failed.', String(err))
     }
+
+    // The model wrote the analysis; everything it sits in is rendered here, from data this
+    // project already holds exactly.
+    const html = renderArtifactPage({
+      repoName: this.store.getGraph()?.repo.name ?? 'repository',
+      detail: await this.store.getCommitDetail(sha),
+      analysis,
+      generatedAt: Date.now(),
+    })
 
     const path = await writeCached(repoRoot, key, html)
     return { state: 'ready', key, path }

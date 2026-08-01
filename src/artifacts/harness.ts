@@ -32,11 +32,12 @@ export class HarnessError extends Error {
 /** Generation is a minutes-scale job on a large commit, not a seconds-scale one. */
 const DEFAULT_TIMEOUT_MS = 240_000
 
-export async function generatePage(brief: string, options: HarnessOptions = {}): Promise<string> {
+/** Returns the model's analysis as a sanitised HTML fragment, ready for the chassis. */
+export async function generateAnalysis(brief: string, options: HarnessOptions = {}): Promise<string> {
   const harness = options.harness ?? 'claude'
   const args = buildArgs(harness, options.model)
   const raw = await run(harness, args, brief, options)
-  return extractHtml(raw)
+  return sanitiseFragment(extractFragment(raw))
 }
 
 function buildArgs(harness: HarnessName, model?: string): string[] {
@@ -132,28 +133,51 @@ function run(
 }
 
 /**
- * Recover the document from whatever the harness actually returned.
+ * Recover the fragment from whatever the harness actually returned.
  *
- * The spec asks for bare HTML and the smoke tests produce exactly that, but a model that
- * wraps its answer in a fence — or prefixes a sentence — should degrade to a working page
- * rather than to a file that renders as source code. Cheap to do, and the failure it
- * prevents is one the user would have to read HTML to diagnose.
+ * The spec asks for a bare fragment and that is what arrives, but a model that wraps its
+ * answer in a fence, prefixes a sentence, or ignores the instruction and returns a whole
+ * document should still produce a working page rather than a file that renders as source
+ * code. Cheap to do, and the failure it prevents is one you would have to read HTML to
+ * diagnose.
  */
-export function extractHtml(raw: string): string {
+export function extractFragment(raw: string): string {
   const text = raw.trim()
   if (text === '') throw new HarnessError('The harness returned nothing.')
 
   const fenced = /```(?:html)?\s*\n([\s\S]*?)```/i.exec(text)
-  const candidate = fenced?.[1]?.trim() ?? text
+  let candidate = (fenced?.[1] ?? text).trim()
 
-  const start = candidate.search(/<!doctype html|<html[\s>]/i)
-  if (start === -1) {
-    throw new HarnessError(
-      'The harness did not return an HTML document.',
-      candidate.slice(0, 500),
-    )
+  // It returned a whole document anyway: keep the body and drop the chrome we supply.
+  const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(candidate)
+  if (body) candidate = body[1]!.trim()
+  else candidate = candidate.replace(/^<!doctype[^>]*>/i, '').trim()
+
+  if (!/<[a-z]/i.test(candidate)) {
+    throw new HarnessError('The harness did not return any HTML.', candidate.slice(0, 500))
   }
+  return candidate
+}
 
-  const end = candidate.toLowerCase().lastIndexOf('</html>')
-  return end === -1 ? candidate.slice(start) : candidate.slice(start, end + '</html>'.length)
+/**
+ * Strip anything executable out of the fragment.
+ *
+ * Worth doing carefully, because of where this ends up. A generated page is served from the
+ * daemon's own origin, which is the origin holding the session cookie — so a script inside
+ * one would run with the daemon's API reachable to it. And the fragment is derived from a
+ * commit diff, which is content someone else can write: reviewing a branch from an
+ * untrusted fork puts their text into the prompt that produces this page.
+ *
+ * This is the second of two defences and the weaker one; a regex is not a parser. The one
+ * that actually holds is the `Content-Security-Policy` the response carries, which forbids
+ * scripts at the browser rather than trusting this to have caught them. Both are here
+ * because either alone is a single point of failure.
+ */
+export function sanitiseFragment(fragment: string): string {
+  return fragment
+    .replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form)\b[^>]*\/?>/gi, '')
+    // Inline handlers: `onclick=`, `onerror=`, quoted or bare.
+    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s+(href|src|xlink:href)\s*=\s*("\s*javascript:[^"]*"|'\s*javascript:[^']*'|javascript:[^\s>]*)/gi, '')
 }

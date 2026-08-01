@@ -1,6 +1,6 @@
 import type { SessionBandInfo } from '../../api.js'
-import { formatTokens } from '../format.js'
-import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
+import { formatTokens, relativeTime, sessionEnded } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS, X_PATHS } from '../icons.js'
 
 interface SessionHeaderProps {
   /**
@@ -9,6 +9,15 @@ interface SessionHeaderProps {
    * view rather than of the session — the wire type stays a description of what happened.
    */
   session: SessionBandInfo & { elsewhere?: number }
+  /**
+   * Epoch millis, shared by every row on a render so they agree on "now".
+   *
+   * Whether a session has ended is a property of the clock rather than of the payload, so
+   * it is decided here and not on the wire. `App.tsx` re-ticks this every 20 s, which is
+   * what lets the mark appear on a session that goes quiet without a commit to trigger a
+   * refresh — nothing watches the transcript directory.
+   */
+  now: number
   /** Save this band alone, or absent while the graph is still settling. */
   onExport?: () => void
 }
@@ -24,29 +33,29 @@ interface SessionHeaderProps {
  * nothing records that a session *caused* a commit — so this says the commits below were
  * observed alongside the session, and never that the session wrote them.
  */
-export function SessionHeader({ session, onExport }: SessionHeaderProps) {
+export function SessionHeader({ session, now, onExport }: SessionHeaderProps) {
   const tokens = session.inputTokens + session.outputTokens
+  const ended = sessionEnded(session.endedAt, now)
 
   return (
-    <div className="shead" title={sessionTooltip(session)}>
+    <div className="shead" title={sessionTooltip(session, now)}>
       {/*
        * Hidden from the accessibility tree: the title beside it already says what the row
        * is, so announcing an icon here would only repeat it.
        */}
-      <svg
-        className="shead__mark"
-        viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={ICON_STROKE}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        {MONITOR_PATHS.map((d) => (
-          <path key={d} d={d} />
-        ))}
-      </svg>
+      <Mark paths={MONITOR_PATHS} className="shead__mark" />
+      {ended && (
+        /*
+         * Labelled where the monitor is not. The monitor is decoration for a row whose
+         * title already names it; this one carries a fact that appears nowhere else in the
+         * row, so it has to survive being read rather than seen.
+         */
+        <Mark
+          paths={X_PATHS}
+          className="shead__mark shead__mark--ended"
+          label={`Ended — no activity for ${relativeTime(session.endedAt, now)}`}
+        />
+      )}
       <span className="shead__title">{session.title ?? 'Untitled session'}</span>
       <span className="shead__meta">
         {session.commitCount} commit{session.commitCount === 1 ? '' : 's'}
@@ -90,7 +99,46 @@ export function SessionHeader({ session, onExport }: SessionHeaderProps) {
   )
 }
 
-function sessionTooltip(session: SessionBandInfo): string {
+/**
+ * One icon from `icons.ts`, at the size `.shead__mark` sets.
+ *
+ * `currentColor` on the stroke and nothing on `fill`, so a single `color` declaration in
+ * the CSS governs the whole glyph. A `label` promotes the icon from decoration to content:
+ * without one it is hidden from the accessibility tree entirely, rather than announced as
+ * an unnamed graphic.
+ */
+function Mark({
+  paths,
+  className,
+  label,
+}: {
+  paths: readonly string[]
+  className: string
+  label?: string
+}) {
+  return (
+    <svg
+      className={className}
+      viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={ICON_STROKE}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role={label === undefined ? undefined : 'img'}
+      aria-hidden={label === undefined ? true : undefined}
+    >
+      {/* Names the icon for a screen reader and doubles as its hover tooltip, which is
+          more specific than the row-wide one it sits inside. */}
+      {label !== undefined && <title>{label}</title>}
+      {paths.map((d) => (
+        <path key={d} d={d} />
+      ))}
+    </svg>
+  )
+}
+
+function sessionTooltip(session: SessionBandInfo, now: number): string {
   const lines = [
     session.title ?? 'Untitled session',
     `Observed alongside ${session.commitCount} commit${session.commitCount === 1 ? '' : 's'}`,
@@ -100,6 +148,16 @@ function sessionTooltip(session: SessionBandInfo): string {
   if (session.model) lines.push(session.model)
   lines.push(`${new Date(session.startedAt).toLocaleString()} — ${duration(session)}`)
   if (session.branches.length > 0) lines.push(`Branches: ${session.branches.join(', ')}`)
+  /*
+   * Says what was measured, not just the verdict. The mark is an inference from a silent
+   * transcript, so the row it qualifies should show the reader the evidence and let them
+   * disagree with it.
+   */
+  lines.push(
+    sessionEnded(session.endedAt, now)
+      ? `Ended — no activity for ${relativeTime(session.endedAt, now)}`
+      : `Active — last activity ${relativeTime(session.endedAt, now)}`,
+  )
   return lines.join('\n')
 }
 

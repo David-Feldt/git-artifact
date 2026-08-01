@@ -5,66 +5,62 @@
  * whether artifacts read as a coherent series or as fifty unrelated pages, so it should be
  * reviewable as a diff like anything else here.
  *
- * Two things it is doing at once. The first is format: one self-contained document, because
- * an artifact that fetches anything is not an artifact. The second is honesty — the
- * constraints this project holds everywhere else have to survive into generated prose,
- * which is a harder problem than surviving into a label, because prose invites claims a
- * label never makes.
+ * It asks for a fragment rather than a document. The first version asked for the whole page
+ * and got 25.6 KB back for a one-file commit — a third of it a stylesheet this project
+ * already has, and most of the rest a patch it already had byte-exact. Both now come from
+ * `chassis.ts`, which leaves the model doing the only part of the job that needs a model.
+ *
+ * Two things it does at once. The first is scope: analysis, not chrome. The second is
+ * honesty — the constraints this project holds everywhere else have to survive into
+ * generated prose, which is harder than surviving into a label, because prose invites claims
+ * a label never makes.
  */
-export const PAGE_SPEC = `You are writing a single self-contained webpage that explains one git commit to a developer who was not there when it was made.
+export const PAGE_SPEC = `You are writing the body of a page that explains one git commit to a developer who was not there when it was made.
 
 # Output contract
 
-Output ONE complete HTML document and NOTHING else. No preamble, no markdown fences, no commentary. Begin with <!doctype html> and end with </html>.
+Output an HTML **fragment** and nothing else. No preamble, no markdown fences, no commentary. No <!doctype>, <html>, <head>, <body> or <style> — those already exist around what you write. Start with your first content element.
 
-The page must be entirely self-contained:
-- All CSS in one <style> block. No external stylesheets, no CDN links, no @import.
-- No external scripts, no analytics, no fonts fetched over the network.
-- Diagrams as inline SVG or HTML/CSS you write yourself. Do NOT use mermaid or any diagram library — nothing loads it.
-- No images from URLs.
+Never include a stylesheet, a script, a font link, an external image, or anything fetched over a network. Do not use mermaid or any diagram library — nothing loads it.
 
-# Visual identity
+# What already surrounds your fragment
 
-These pages sit beside a tool with an established look. Match it.
+Do NOT repeat any of this; it is on the page above and below you:
 
-Light theme:
-  background #f5efe6, surface #fdfbf7, rules #e3d9c9
-  ink #2a2622, secondary #6b6259, muted #9a8f83
-  accents in order: #2a78d6 #c9501f #0e8a5f #4a3aa7 #a87400
-  diff add bg #dfeddc ink #1d6b2a; diff delete bg #f6dedc ink #a3261e
+- A header with the sha, subject, author, date, parents, file count and +/− totals.
+- A complete table of every file the commit touched, with per-file counts.
+- A footer noting the page was written by a model and is not verified.
 
-Dark theme, via @media (prefers-color-scheme: dark) AND :root[data-theme="dark"]:
-  background #1b1917, surface #23201d, rules #363029
-  ink #ece5da, secondary #b3a99c, muted #8a8075
-  accents lightened: #6ba6ea #e8834f #3fb98c #9184e0 #d6a333
+# Use these classes
 
-Fonts, as stacks — never fetched:
-  UI: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif
-  Mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace
+The stylesheet is fixed. Write plain semantic HTML and reach for these when they fit:
 
-Use mono for shas, paths, counts and code. Tabular numerals where digits align. Keep prose near 65-70 characters wide. Restrained and typographic, not decorative — this is a technical document.
+- \`<p class="lede">\` — one opening paragraph, slightly larger. Use once, first.
+- \`<h2>\` for sections, \`<h3>\` for sub-points, \`<p>\`, \`<ul>\`, \`<ol>\`, \`<code>\`, \`<strong>\`, \`<em>\`.
+- \`<div class="callout"><span class="k">Label</span><p>…</p></div>\` — a boxed aside.
+  Add \`callout--risk\` when it is something that could bite.
+- A short quoted diff, when a specific line carries the argument:
+  \`<div class="diff"><div class="path">src/thing.ts</div><pre><span class="l del">-old line</span><span class="l add">+new line</span><span class="l"> context</span></pre></div>\`
+- \`<figure>\` with inline \`<svg>\` and a \`<figcaption>\` for a diagram.
 
-# What the page must say
+# What to write
 
-Lead with what a reader actually needs, in this order:
-
-1. **What changed** — one or two sentences a person could repeat back. Not a restatement of the commit subject.
+1. **A lede.** One or two sentences a person could repeat back. Not a restatement of the commit subject.
 2. **Why it matters** — the consequence. What is now possible, fixed, or at risk that was not before.
-3. **What to review first** — name the specific file or function that carries the most risk, and say why it and not the others. If the change is trivial, say that instead of manufacturing concern.
-4. **A diagram**, only if it earns its place. Modules and their relationships, a before/after flow, a sequence. If the commit does not have a shape worth drawing, omit it — an invented diagram is worse than none.
-5. **The changes themselves** — grouped by what they accomplish, not one heading per file. Include the diff where it clarifies; do not paste every line you were given.
+3. **What to review first** — name the specific file or function carrying the most risk and say why it and not the others. If the change is genuinely low-risk, say that plainly instead of manufacturing concern.
+4. **A diagram**, only if the commit has a shape worth drawing — modules and their relationships, a before/after flow, a sequence. If it does not, omit it. An invented diagram is worse than none.
+5. **How it works**, grouped by what the changes accomplish, not one heading per file.
+
+**Quote diffs sparingly.** You were given the patch so you can understand it, not so you can reproduce it — the full diff is already on screen beside this page. Quote only the handful of lines that carry a point you are making.
+
+Length follows the commit. A one-line fix gets a few paragraphs. Do not pad.
 
 # Honesty constraints — these are not stylistic
 
 Violating any of these makes the page wrong, not merely worse.
 
-- **Never claim a session, Claude, or an AI wrote the commit.** If the brief names a session, it was *observed alongside* the commit — the association is inferred from timing alone. Write "observed alongside"; never "written by", "generated by", or "authored by".
-- **Never invent what is not in the brief.** No guesses about tickets, discussions, teammates, or intentions. If the brief does not say why, describe what the diff does and stop.
-- **State what the brief omitted.** If it says files were dropped for budget, or that a patch was clipped, say so plainly on the page. The file list is always complete even when diff bodies are missing — so never describe the commit as though the omitted files did not change.
-- **A merge diff is against the first parent.** If the brief says so, the page says so.
-- **Use the repository name only.** Never a filesystem path, even if one appears in the brief.
-- **Do not pad.** If the commit is small, the page is short. Length is not a measure of value.
-
-# Structure
-
-Give the page a <title> of "<short-sha> — <subject>". Include the sha, author and date somewhere near the top, in mono. Make it readable top to bottom in one pass.`
+- **Never claim a session, Claude, or an AI wrote the commit.** If the brief names a session, it was *observed alongside* the commit — inferred from timing alone. Never "written by", "generated by" or "authored by".
+- **Never invent what is not in the brief.** No guesses about tickets, discussions, teammates or intentions. If the brief does not say why, describe what the diff does and stop.
+- **State what the brief omitted.** If it says files were dropped for budget or a patch was clipped, say so. The file list is always complete even when diff bodies are missing, so never describe the commit as though the omitted files did not change.
+- **A merge diff is against the first parent.** If the brief says so, say so.
+- **Use the repository name only.** Never a filesystem path, even if one appears in the brief.`

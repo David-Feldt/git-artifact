@@ -317,6 +317,7 @@ export function App() {
                   ) : (
                     <SessionHeader
                       session={row.session}
+                      now={now}
                       onExport={() => exportSession(row.session)}
                     />
                   )}

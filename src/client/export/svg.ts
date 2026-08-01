@@ -11,8 +11,8 @@ import {
   sessionSpan,
 } from '../components/layout.js'
 import { railNodes, railPaths } from '../components/rail-paths.js'
-import { basename, formatTokens, heatBucket, relativeTime } from '../format.js'
-import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
+import { basename, formatTokens, heatBucket, relativeTime, sessionEnded } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS, X_PATHS } from '../icons.js'
 import {
   CARD,
   INK,
@@ -112,6 +112,14 @@ const MIN_REF_WIDTH = 34
 const MIN_RULE = 40
 /** Side of the icon opening a session band. Matches `.shead__mark` in `theme.css`. */
 const MARK_SIZE = 14
+/**
+ * The ended mark that follows it, and the space before it. Both match
+ * `.shead__mark--ended`, where the size is 11px and the negative margin pulls the icon
+ * inside the row's 9px flex gap to leave 4px. It sits closer than anything else in the row
+ * because it modifies the monitor rather than standing beside it.
+ */
+const ENDED_MARK_SIZE = 11
+const ENDED_MARK_GAP = 4
 /**
  * Slack on chip text, absorbing the gap between the font measured and the font drawn.
  *
@@ -485,7 +493,7 @@ function renderSessionRow(
   row: Extract<DisplayRow, { kind: 'session' }>,
   ctx: RowContext,
 ): string[] {
-  const { measure, gutter, cardWidth } = ctx
+  const { measure, gutter, cardWidth, now } = ctx
   const session = row.session
   const top = rowTop(ctx.offsets, row.index)
   const mid = top + rowHeight(row) / 2
@@ -498,7 +506,25 @@ function renderSessionRow(
   // heat, so a band gets weight and position only.
   out.push(icon(MONITOR_PATHS, left, mid - MARK_SIZE / 2, MARK_SIZE, INK_SECONDARY))
 
-  let x = left + MARK_SIZE + GAP
+  let x = left + MARK_SIZE
+
+  /*
+   * The ended mark, placed against the monitor exactly as `.shead__mark--ended` places it.
+   *
+   * Frozen at export time rather than at reading time, which is the only honest thing a
+   * static file can do: it records what was true when the picture was taken, and the header
+   * already stamps the file with when that was. `--ink-muted` for the same reason it is
+   * muted on screen — almost every band in a finished history carries this mark.
+   */
+  if (sessionEnded(session.endedAt, now)) {
+    out.push(
+      icon(X_PATHS, x + ENDED_MARK_GAP, mid - ENDED_MARK_SIZE / 2, ENDED_MARK_SIZE, INK_MUTED),
+    )
+    x += ENDED_MARK_GAP + ENDED_MARK_SIZE
+  }
+
+  x += GAP
+
   const title = fit(session.title ?? 'Untitled session', 320, FONT.sessionTitle, measure)
   out.push(text(x, mid, title.text, FONT.sessionTitle, INK))
   x += measure(title.text, FONT.sessionTitle) + GAP

@@ -202,11 +202,11 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     const artifacts = options.artifacts
     const sha = url.searchParams.get('sha') ?? ''
     if (!isValidSha(sha)) {
-      sendHtml(res, 400, renderShell(sha || 'unknown', 'That is not a commit sha'))
+      sendHtml(res, 400, renderShell(sha || 'unknown', 'That is not a commit sha'), SHELL_CSP)
       return
     }
     if (!artifacts) {
-      sendHtml(res, 501, renderShell(sha, 'Artifact generation is not configured'))
+      sendHtml(res, 501, renderShell(sha, 'Artifact generation is not configured'), SHELL_CSP)
       return
     }
 
@@ -217,7 +217,7 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
     }
 
     const subject = store.getGraph()?.rows.find((row) => row.commit.sha === sha)?.commit.subject
-    sendHtml(res, 200, renderShell(sha, subject ?? ''))
+    sendHtml(res, 200, renderShell(sha, subject ?? ''), SHELL_CSP)
   }
 
   function openEventStream(req: IncomingMessage, res: ServerResponse): void {
@@ -271,15 +271,40 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
  * content, and neither a browser nor anything between should hold on to it. It also keeps
  * the shell's `location.reload()` from being answered out of cache with the shell again.
  */
-function sendHtml(res: ServerResponse, status: number, html: string): void {
+function sendHtml(
+  res: ServerResponse,
+  status: number,
+  html: string,
+  csp: string = ARTIFACT_CSP,
+): void {
   res.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
     'content-length': Buffer.byteLength(html),
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    'content-security-policy': csp,
   })
   res.end(html)
 }
+
+/**
+ * What a generated page is allowed to do: render itself, and nothing else.
+ *
+ * This is the defence that holds. A generated page is served from this daemon's own origin —
+ * the origin that carries the session cookie — so a script inside one would run with the API
+ * reachable to it. And the page is written from a commit diff, which is content someone else
+ * can author: reviewing a branch from an untrusted fork puts their text into the prompt.
+ *
+ * The fragment is also stripped of scripts before it is stored, but a regex is not a parser.
+ * This says no at the browser instead of trusting that pass to have been complete.
+ */
+const ARTIFACT_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; form-action 'none'; base-uri 'none'"
+
+/** The shell polls, so it needs its own inline script — and still nothing from anywhere. */
+const SHELL_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; form-action 'none'; base-uri 'none'"
+
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)

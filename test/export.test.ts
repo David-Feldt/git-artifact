@@ -7,7 +7,8 @@ import type { GraphPayload, SessionBandInfo, WorktreeStatus } from '../src/api.j
 import { buildDisplayRows, sessionSpan, sliceRows } from '../src/client/components/layout.js'
 import { HEAT_HEX, LANE_HEX, PAPER, laneHex, mix } from '../src/client/export/palette.js'
 import { exportFilename } from '../src/client/export/download.js'
-import { ICON_VIEWBOX, MONITOR_PATHS } from '../src/client/icons.js'
+import { ICON_VIEWBOX, MONITOR_PATHS, X_PATHS } from '../src/client/icons.js'
+import { DEFAULT_IDLE_LIMIT_MS } from '../src/sessions/attribute.js'
 import { fit, renderGraphSvg, type Font, type Measure } from '../src/client/export/svg.js'
 
 /**
@@ -180,6 +181,86 @@ describe('renderGraphSvg', () => {
     for (const d of MONITOR_PATHS) expect(svg).toContain(`<path d="${d}"/>`)
     // Scaled into the 14px box `.shead__mark` declares, not left at the 24-unit viewbox.
     expect(svg).toContain(`scale(${Math.round((14 / ICON_VIEWBOX) * 100) / 100})`)
+  })
+
+  it('marks a session that has stopped, and only once it has', () => {
+    /*
+     * The one thing on a band that is not read off the payload: it is inferred from the
+     * clock, so the same session renders two ways. Both directions matter and the false
+     * positive is the expensive one — a mark on a session that is still working is a
+     * statement the picture makes and cannot take back.
+     */
+    const session: SessionBandInfo = {
+      sessionId: 's1',
+      title: 'Understand background changes',
+      startRow: 0,
+      endRow: 0,
+      commitCount: 1,
+      promptCount: 3,
+      inputTokens: 1000,
+      outputTokens: 100,
+      model: 'claude',
+      startedAt: Date.UTC(2026, 7, 1, 10, 0),
+      endedAt: Date.UTC(2026, 7, 1, 11, 0),
+      branches: ['main'],
+    }
+    const graph = payload([c('a1', 'first')], { sessions: [session] })
+    const at = (now: number) =>
+      renderGraphSvg(
+        { graph, rows: buildDisplayRows(graph.rows, [], graph.sessions), now },
+        { measure },
+      )
+    const hasMark = (svg: string) => X_PATHS.every((d) => svg.includes(`<path d="${d}"/>`))
+
+    expect(hasMark(at(session.endedAt + DEFAULT_IDLE_LIMIT_MS + 1))).toBe(true)
+    // Idle but inside the window: still working as far as anyone can tell.
+    expect(hasMark(at(session.endedAt + DEFAULT_IDLE_LIMIT_MS - 1))).toBe(false)
+    // Clock skew and a sleeping machine both put the last record in the future. Marking
+    // that as ended would be arithmetic on a negative gap, not an observation.
+    expect(hasMark(at(session.endedAt - 60_000))).toBe(false)
+
+    // Drawn at the 11px `.shead__mark--ended` sets, not at the monitor's 14.
+    expect(at(session.endedAt + DEFAULT_IDLE_LIMIT_MS + 1)).toContain(
+      `scale(${Math.round((11 / ICON_VIEWBOX) * 100) / 100})`,
+    )
+  })
+
+  it('keeps a marked band inside the card it is drawn in', () => {
+    /*
+     * The mark pushes the title, the meta and the rule rightwards, so the row it produces is
+     * the widest a band gets. Exercised at the width where the fitting has least slack.
+     */
+    const session: SessionBandInfo = {
+      sessionId: 's1',
+      title: 'A session title that simply refuses to stop going on and on and on',
+      startRow: 0,
+      endRow: 0,
+      commitCount: 1,
+      promptCount: 3,
+      inputTokens: 2_400_000,
+      outputTokens: 60_000,
+      model: 'claude',
+      startedAt: Date.UTC(2026, 7, 1, 10, 0),
+      endedAt: Date.UTC(2026, 7, 1, 11, 0),
+      branches: ['main', 'feature', 'third'],
+    }
+    const graph = payload([c('a1', 'first')], { sessions: [session] })
+    const svg = renderGraphSvg(
+      {
+        graph,
+        rows: buildDisplayRows(graph.rows, [], graph.sessions),
+        now: session.endedAt + DEFAULT_IDLE_LIMIT_MS + 1,
+      },
+      { measure },
+    )
+
+    const width = Number(/width="([\d.]+)"/.exec(svg)![1])
+    for (const [, x] of svg.matchAll(/<text x="([\d.-]+)"/g)) {
+      expect(Number(x)).toBeLessThan(width)
+    }
+    for (const [, x] of svg.matchAll(/translate\(([\d.-]+) /g)) {
+      expect(Number(x)).toBeLessThan(width)
+    }
   })
 
   it('keeps every line of text inside the document', () => {

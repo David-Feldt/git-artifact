@@ -639,6 +639,27 @@ body {
   flex: none;
 }
 
+/*
+ * The "this session has stopped" mark, and the quietest thing in the row on purpose.
+ *
+ * `--ink-muted` rather than `--danger`: nearly every band in a repository's history is an
+ * ended session, so this fires on almost every row, and a red one would turn a wall of
+ * normal history into a wall of alarm. It is a state, not a fault.
+ *
+ * The negative margin pulls it inside the flex `gap` so it sits against the monitor rather
+ * than floating between the monitor and the title — the pair has to read as one mark with
+ * a modifier, not as two separate icons.
+ *
+ * `export/svg.ts` draws the same geometry at the same size. Changing either belongs with a
+ * matching change there.
+ */
+.shead__mark--ended {
+  color: var(--ink-muted);
+  width: 11px;
+  height: 11px;
+  margin-left: -5px;
+}
+
 .shead__title {
   font-weight: 620;
   color: var(--ink);

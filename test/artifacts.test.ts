@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CommitDetail, DiffFile, SessionBandInfo } from '../src/api.js'
 import { buildBrief, DEFAULT_BUDGET, type Budget } from '../src/artifacts/bundle.js'
 import { artifactKey } from '../src/artifacts/cache.js'
-import { extractHtml, HarnessError } from '../src/artifacts/harness.js'
+import { extractFragment, HarnessError, sanitiseFragment } from '../src/artifacts/harness.js'
 
 /**
  * The brief, and the budget that bounds it.
@@ -219,31 +219,65 @@ describe('the brief', () => {
   })
 })
 
-describe('extractHtml', () => {
-  it('passes a bare document through', () => {
-    const html = '<!doctype html><html><body>hi</body></html>'
-    expect(extractHtml(html)).toBe(html)
+describe('extractFragment', () => {
+  it('passes a bare fragment through', () => {
+    expect(extractFragment('<p class="lede">Hello.</p>')).toBe('<p class="lede">Hello.</p>')
   })
 
-  it('unwraps a fenced document', () => {
-    expect(extractHtml('```html\n<!doctype html><html></html>\n```')).toBe(
-      '<!doctype html><html></html>',
-    )
+  it('unwraps a fenced fragment', () => {
+    expect(extractFragment('```html\n<p>Hi</p>\n```')).toBe('<p>Hi</p>')
   })
 
   it('drops a chatty preamble rather than writing it into the page', () => {
-    const out = extractHtml("Sure! Here's the page:\n\n<!doctype html><html></html>")
-    expect(out.startsWith('<!doctype html>')).toBe(true)
+    const out = extractFragment("Sure! Here's the analysis:\n\n<p>Hi</p>")
+    expect(out).toContain('<p>Hi</p>')
   })
 
-  it('drops trailing commentary after the document ends', () => {
-    const out = extractHtml('<!doctype html><html></html>\n\nLet me know if you want changes!')
-    expect(out.endsWith('</html>')).toBe(true)
+  it('keeps only the body when the model returns a whole document anyway', () => {
+    // The chassis supplies the chrome; a returned <head> would end up rendered as text.
+    const out = extractFragment(
+      '<!doctype html><html><head><style>p{color:red}</style></head><body><p>Real content</p></body></html>',
+    )
+    expect(out).toBe('<p>Real content</p>')
+    expect(out).not.toContain('<style>')
   })
 
-  it('fails loudly when there is no document at all', () => {
-    expect(() => extractHtml('I cannot help with that.')).toThrow(HarnessError)
-    expect(() => extractHtml('   ')).toThrow(HarnessError)
+  it('fails loudly when there is no markup at all', () => {
+    expect(() => extractFragment('I cannot help with that.')).toThrow(HarnessError)
+    expect(() => extractFragment('   ')).toThrow(HarnessError)
+  })
+})
+
+describe('sanitiseFragment', () => {
+  /*
+   * The page is served same-origin with the daemon, and its content derives from a diff —
+   * which is text someone else can author when you review an untrusted branch.
+   */
+  it('removes a script element and its contents', () => {
+    const out = sanitiseFragment('<p>ok</p><script>fetch("/api/graph")</script><p>after</p>')
+    expect(out).not.toContain('script')
+    expect(out).not.toContain('fetch(')
+    expect(out).toContain('<p>after</p>')
+  })
+
+  it('removes inline event handlers', () => {
+    expect(sanitiseFragment('<p onclick="steal()">x</p>')).toBe('<p>x</p>')
+    expect(sanitiseFragment("<div onerror='steal()'>x</div>")).toBe('<div>x</div>')
+  })
+
+  it('removes javascript: urls', () => {
+    expect(sanitiseFragment('<a href="javascript:steal()">x</a>')).not.toContain('javascript:')
+  })
+
+  it('removes elements that can load or submit', () => {
+    for (const tag of ['<iframe src="x"></iframe>', '<link rel="stylesheet" href="x">', '<form action="x"></form>']) {
+      expect(sanitiseFragment(`<p>a</p>${tag}`)).toBe('<p>a</p>')
+    }
+  })
+
+  it('leaves ordinary content, including inline svg diagrams, alone', () => {
+    const svg = '<figure><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg></figure>'
+    expect(sanitiseFragment(svg)).toBe(svg)
   })
 })
 
