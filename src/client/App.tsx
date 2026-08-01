@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RepoInfo } from '../api.js'
+import type { RepoInfo, SessionBandInfo } from '../api.js'
+import { downloadSvg } from './export/download.js'
 import { CommitCard } from './components/CommitCard.js'
 import { CommitDetailPanel } from './components/CommitDetail.js'
+import { ExportControls } from './components/ExportControls.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import { SessionHeader } from './components/SessionHeader.js'
@@ -16,6 +18,8 @@ import {
   rowHeight,
   rowOffsets,
   rowTop,
+  sessionSpan,
+  sliceRows,
 } from './components/layout.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
@@ -70,6 +74,58 @@ export function App() {
   const detail = useCommitDetail(expanded?.sha ?? null)
 
   const close = useCallback(() => setSelected(null), [])
+
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  /**
+   * Open a commit's generated page in its own window.
+   *
+   * `window.open` and nothing else, deliberately. A popup opened after an `await` has lost
+   * the user gesture that permits it and is blocked, so the window is opened immediately
+   * and the daemon serves it a shell that starts the work and polls itself.
+   *
+   * Named per sha, so asking twice focuses the window already open on that commit rather
+   * than stacking a second one over it.
+   */
+  const explain = useCallback((sha: string) => {
+    const opened = window.open(
+      `/artifact?sha=${encodeURIComponent(sha)}`,
+      `git-artifact-${sha}`,
+      'popup,width=940,height=900,noopener=no',
+    )
+    setExportError(
+      opened === null
+        ? 'Your browser blocked the popup. Allow popups for this page and try again.'
+        : null,
+    )
+    opened?.focus()
+  }, [])
+
+  /**
+   * Save one band's commits, rather than the whole graph.
+   *
+   * A session-sized excerpt is a few hundred pixels tall where a full history runs to
+   * thousands, which is the difference between an image someone reads in a pull request and
+   * one they scroll past. The rows are renumbered by `sliceRows`, because the rails read
+   * their vertical position from a row's index within the list being drawn.
+   */
+  const exportSession = useCallback(
+    (session: SessionBandInfo) => {
+      if (graph === null) return
+      const span = sessionSpan(graph.rows, rows, session)
+      if (span === null) return
+      try {
+        setExportError(null)
+        downloadSvg(
+          { graph, rows: sliceRows(rows, span.first, span.last), now },
+          { scopeLabel: session.title ?? 'Untitled session' },
+        )
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : 'The export failed.')
+      }
+    },
+    [graph, rows, now],
+  )
 
   useEffect(() => {
     if (expanded === null) return
@@ -134,6 +190,7 @@ export function App() {
             {graph.rows.length} commit{graph.rows.length === 1 ? '' : 's'}
           </span>
         )}
+        {graph && <ExportControls graph={graph} rows={rows} now={now} />}
         <ConnectionBadge connection={connection} />
       </header>
 
@@ -156,6 +213,11 @@ export function App() {
         {connection === 'down' && (
           <div className="banner banner--error">
             <span>Lost contact with the git-artifact daemon. Reconnecting…</span>
+          </div>
+        )}
+        {exportError && (
+          <div className="banner banner--error">
+            <span>{exportError}</span>
           </div>
         )}
       </div>
@@ -228,7 +290,10 @@ export function App() {
                   ) : row.kind === 'wip' ? (
                     <WipNode worktree={row.worktree} />
                   ) : (
-                    <SessionHeader session={row.session} />
+                    <SessionHeader
+                      session={row.session}
+                      onExport={() => exportSession(row.session)}
+                    />
                   )}
                 </div>
               ))}
@@ -247,6 +312,7 @@ export function App() {
                     error={detail.error}
                     lane={expanded.lane}
                     onClose={close}
+                    onExplain={() => explain(expanded.sha)}
                   />
                 </div>
               )}

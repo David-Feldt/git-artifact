@@ -12,6 +12,8 @@ import {
   type AuthConfig,
 } from './auth.js'
 import { isValidSha, UnknownCommitError } from '../git/show.js'
+import type { ArtifactService } from '../artifacts/service.js'
+import { renderShell } from '../artifacts/shell.js'
 import type { GraphStore } from './store.js'
 
 /** Loopback only. There is no configuration to change this, deliberately. */
@@ -41,6 +43,8 @@ export interface DaemonOptions {
   extraOrigins?: string[]
   /** Serve the built client from disk. Off in dev, where Vite serves it instead. */
   serveClient?: boolean
+  /** Absent when no harness is configured; the artifact routes then report as much. */
+  artifacts?: ArtifactService
 }
 
 export interface Daemon {
@@ -76,10 +80,17 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${BIND_ADDRESS}:${port}`)
 
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      // There are no mutating endpoints. Nothing here can change the repo, so anything
-      // other than a read is a mistake or an attack; either way it is refused.
-      sendJson(res, 405, { error: 'This daemon is read-only.' })
+    /*
+     * One endpoint accepts a write, and only one.
+     *
+     * Generating an artifact spends tokens and produces a file, so it cannot honestly be a
+     * GET — and a browser cannot shell out to a CLI, so it has to be the daemon that does.
+     * The rule that was actually load-bearing is unchanged and still absolute: nothing here
+     * can modify the repository.
+     */
+    const isGenerate = req.method === 'POST' && url.pathname === '/api/artifact'
+    if (req.method !== 'GET' && req.method !== 'HEAD' && !isGenerate) {
+      sendJson(res, 405, { error: 'This daemon does not modify anything but its own cache.' })
       return
     }
 
@@ -113,6 +124,12 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       case '/api/events':
         openEventStream(req, res)
         return
+      case '/api/artifact':
+        await handleArtifactApi(req, url, res)
+        return
+      case '/artifact':
+        await serveArtifactPage(url, res)
+        return
       default:
         if (serveClient) await serveStatic(url.pathname, res)
         else sendJson(res, 404, { error: 'not found' })
@@ -143,6 +160,64 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       }
       throw err
     }
+  }
+
+  /**
+   * Artifact status (`GET`) and generation (`POST`).
+   *
+   * Both are the same route because they address the same thing; the method is the whole
+   * difference between asking and spending.
+   */
+  async function handleArtifactApi(
+    req: IncomingMessage,
+    url: URL,
+    res: ServerResponse,
+  ): Promise<void> {
+    const artifacts = options.artifacts
+    if (!artifacts) {
+      sendJson(res, 501, { state: 'error', message: 'Artifact generation is not configured.' })
+      return
+    }
+
+    const sha = url.searchParams.get('sha') ?? ''
+    if (!isValidSha(sha)) {
+      sendJson(res, 400, { state: 'error', message: 'A commit sha is required.' })
+      return
+    }
+
+    const status =
+      req.method === 'POST' ? await artifacts.generate(sha) : await artifacts.status(sha)
+    sendJson(res, 200, status)
+  }
+
+  /**
+   * The popup itself.
+   *
+   * Serves the generated page when there is one, and otherwise a shell that starts the
+   * work and polls. Doing it this way is what keeps the click handler in the app to a bare
+   * `window.open` — a popup opened after an `await` has lost its user gesture and is
+   * blocked.
+   */
+  async function serveArtifactPage(url: URL, res: ServerResponse): Promise<void> {
+    const artifacts = options.artifacts
+    const sha = url.searchParams.get('sha') ?? ''
+    if (!isValidSha(sha)) {
+      sendHtml(res, 400, renderShell(sha || 'unknown', 'That is not a commit sha'))
+      return
+    }
+    if (!artifacts) {
+      sendHtml(res, 501, renderShell(sha, 'Artifact generation is not configured'))
+      return
+    }
+
+    const page = await artifacts.page(sha)
+    if (page !== null) {
+      sendHtml(res, 200, page)
+      return
+    }
+
+    const subject = store.getGraph()?.rows.find((row) => row.commit.sha === sha)?.commit.subject
+    sendHtml(res, 200, renderShell(sha, subject ?? ''))
   }
 
   function openEventStream(req: IncomingMessage, res: ServerResponse): void {
@@ -187,6 +262,23 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         server.close(() => resolve())
       }),
   }
+}
+
+/**
+ * A generated page, or the shell standing in for one.
+ *
+ * `no-store` for the same reason every other response here carries it: this is repository
+ * content, and neither a browser nor anything between should hold on to it. It also keeps
+ * the shell's `location.reload()` from being answered out of cache with the shell again.
+ */
+function sendHtml(res: ServerResponse, status: number, html: string): void {
+  res.writeHead(status, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(html),
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  })
+  res.end(html)
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

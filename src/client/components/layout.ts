@@ -186,3 +186,40 @@ export function buildDisplayRows(
  * fields exclusive.
  */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+
+/**
+ * Display-row range a session band covers, inclusive.
+ *
+ * `SessionBandInfo` indexes into the *graph* rows, but WIP nodes and headers are spliced
+ * into the display list, so the two index spaces diverge the moment anything is
+ * interleaved. Resolving the end through its sha is what keeps a band aligned with the
+ * rows it actually describes.
+ *
+ * Returns null when either end is missing, which happens while the graph is reloading and
+ * a band momentarily refers to a commit that is no longer in the window.
+ */
+export function sessionSpan(
+  graphRows: GraphRow[],
+  rows: DisplayRow[],
+  session: SessionBandInfo,
+): { first: number; last: number } | null {
+  const first = rows.findIndex(
+    (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
+  )
+  const endSha = graphRows[session.endRow]?.commit.sha
+  const last = rows.findIndex((r) => r.kind === 'commit' && r.row.commit.sha === endSha)
+  if (first === -1 || last === -1 || last < first) return null
+  return { first, last }
+}
+
+/**
+ * A contiguous run of rows, renumbered to stand alone.
+ *
+ * `index` is a row's position in the list it belongs to — the rails read `y(row.index)`
+ * against an offsets array built from that same list. A raw `slice` keeps the original
+ * numbers and every rail in the excerpt would be drawn against the wrong row, so the
+ * renumbering here is what makes a scoped export possible at all.
+ */
+export function sliceRows(rows: DisplayRow[], first: number, last: number): DisplayRow[] {
+  return rows.slice(first, last + 1).map((row, index) => ({ ...row, index }))
+}

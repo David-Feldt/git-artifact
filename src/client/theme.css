@@ -158,6 +158,43 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Export. Quiet by default — this is a thing you reach for occasionally, and the header
+ * belongs to the repository name and the live state, not to a toolbar.
+ */
+.export {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.export__btn {
+  font: inherit;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--ink-secondary);
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.export__btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  color: var(--ink);
+}
+
+.export__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.export__error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
 /* Connection state. Never let a dead daemon look like an idle one. */
 .conn {
   display: inline-flex;
@@ -557,11 +594,20 @@ body {
   padding-right: 16px;
 }
 
+/*
+ * Stroked, not filled, and `--ink-secondary` rather than the band's own colour: the icon
+ * is a marker for where a band starts, so it should carry no more weight than the rule
+ * that closes the row. `color` is what it is set on, not `stroke`, because the paths use
+ * `currentColor` — which keeps this one declaration in charge of the whole icon.
+ *
+ * `export/svg.ts` draws the same geometry at the same size. Changing either belongs with
+ * a matching change there.
+ */
 .shead__mark {
-  width: 4px;
-  height: 15px;
-  border-radius: 2px;
-  background: var(--ink-secondary);
+  display: block;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-secondary);
   flex: none;
 }
 
@@ -598,6 +644,35 @@ body {
   height: 1px;
   background: var(--rule);
   min-width: 12px;
+}
+
+/*
+ * Revealed on hover or focus. A band is an annotation, not a row of controls, and a button
+ * visible on every one of them would read as the loudest thing on the graph.
+ */
+.shead__export {
+  flex: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-secondary);
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 0 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+}
+
+.shead:hover .shead__export,
+.shead__export:focus-visible {
+  opacity: 1;
+}
+
+.shead__export:hover {
+  color: var(--ink);
+  background: var(--card-hover);
 }
 
 /*
@@ -753,6 +828,44 @@ body {
 
 .detail__spacer {
   flex: 1;
+}
+
+/*
+ * Takes the lane's own colour, like everything else in this panel. Generating a page
+ * spends tokens, so it reads as a deliberate action rather than another quiet affordance —
+ * but it still sits inside an opened commit, not on every row.
+ */
+.detail__explain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 11.5px;
+  flex: none;
+  color: var(--detail-accent);
+  background: color-mix(in srgb, var(--detail-accent) 8%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--detail-accent) 35%, transparent);
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Sized in em so the icon tracks the label if the type scale ever moves. */
+.detail__explain svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex: none;
+}
+
+.detail__explain:hover {
+  background: color-mix(in srgb, var(--detail-accent) 16%, var(--card));
+  border-color: var(--detail-accent);
+}
+
+.detail__explain:focus-visible {
+  outline: 2px solid var(--detail-accent);
+  outline-offset: 2px;
 }
 
 .detail__stat {

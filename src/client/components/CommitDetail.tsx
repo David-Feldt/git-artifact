@@ -1,5 +1,6 @@
 import type { CommitDetail, DiffFile, DiffHunk } from '../../api.js'
 import { laneColor } from './layout.js'
+import { CHART_NETWORK_PATHS, ICON_STROKE, ICON_VIEWBOX } from '../icons.js'
 
 /**
  * Ceiling on how many lines of one file's patch reach the DOM.
@@ -18,6 +19,8 @@ interface CommitDetailPanelProps {
   /** Lane of the commit this panel belongs to, so the panel carries its rail's colour. */
   lane: number
   onClose: () => void
+  /** Open this commit's generated page. Absent when no harness is configured. */
+  onExplain?: () => void
 }
 
 export function CommitDetailPanel({
@@ -26,6 +29,7 @@ export function CommitDetailPanel({
   error,
   lane,
   onClose,
+  onExplain,
 }: CommitDetailPanelProps) {
   return (
     <div className="detail" style={{ ['--detail-accent' as string]: laneColor(lane) }}>
@@ -38,13 +42,13 @@ export function CommitDetailPanel({
       ) : loading || detail === null ? (
         <div className="detail__notice">Reading the commit…</div>
       ) : (
-        <Loaded detail={detail} />
+        <Loaded detail={detail} onExplain={onExplain} />
       )}
     </div>
   )
 }
 
-function Loaded({ detail }: { detail: CommitDetail }) {
+function Loaded({ detail, onExplain }: { detail: CommitDetail; onExplain?: () => void }) {
   const authored = new Date(detail.authorDate * 1000)
   // Committer and author differ after a rebase, a cherry-pick, or a patch applied on
   // someone's behalf — exactly the cases where knowing both is the point.
@@ -64,6 +68,34 @@ function Loaded({ detail }: { detail: CommitDetail }) {
           {authored.toLocaleString()}
         </span>
         <span className="detail__spacer" />
+        {onExplain && (
+          /*
+           * Lives here rather than on the row itself: the card is already a button, and a
+           * button inside a button is invalid. It also reads better here — you open a
+           * commit to look at it, and this is the thing to do next.
+           */
+          <button
+            className="detail__explain"
+            onClick={onExplain}
+            type="button"
+            title="Write a page explaining this commit"
+          >
+            <svg
+              viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={ICON_STROKE}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {CHART_NETWORK_PATHS.map((d) => (
+                <path key={d} d={d} />
+              ))}
+            </svg>
+            Generate artifact
+          </button>
+        )}
         <DiffStat detail={detail} />
       </div>
 

@@ -1,7 +1,11 @@
 import type { SessionBandInfo } from '../../api.js'
+import { formatTokens } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
 
 interface SessionHeaderProps {
   session: SessionBandInfo
+  /** Save this band alone, or absent while the graph is still settling. */
+  onExport?: () => void
 }
 
 /**
@@ -15,12 +19,29 @@ interface SessionHeaderProps {
  * nothing records that a session *caused* a commit — so this says the commits below were
  * observed alongside the session, and never that the session wrote them.
  */
-export function SessionHeader({ session }: SessionHeaderProps) {
+export function SessionHeader({ session, onExport }: SessionHeaderProps) {
   const tokens = session.inputTokens + session.outputTokens
 
   return (
     <div className="shead" title={sessionTooltip(session)}>
-      <span className="shead__mark" aria-hidden="true" />
+      {/*
+       * Hidden from the accessibility tree: the title beside it already says what the row
+       * is, so announcing an icon here would only repeat it.
+       */}
+      <svg
+        className="shead__mark"
+        viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={ICON_STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {MONITOR_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
       <span className="shead__title">{session.title ?? 'Untitled session'}</span>
       <span className="shead__meta">
         {session.commitCount} commit{session.commitCount === 1 ? '' : 's'}
@@ -34,6 +55,22 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         <span className="shead__multi">{session.branches.length} branches</span>
       )}
       <span className="shead__rule" />
+      {onExport && (
+        /*
+         * Hidden until the row is hovered or the button is focused. A band is a label, and
+         * a control sitting permanently on every one of them would turn a quiet annotation
+         * into a toolbar. Focus is in the condition as well as hover so it stays reachable
+         * from the keyboard.
+         */
+        <button
+          className="shead__export"
+          type="button"
+          onClick={onExport}
+          title={`Save these ${session.commitCount} commit${session.commitCount === 1 ? '' : 's'} as an SVG`}
+        >
+          export
+        </button>
+      )}
     </div>
   )
 }
@@ -51,15 +88,6 @@ function sessionTooltip(session: SessionBandInfo): string {
   return lines.join('\n')
 }
 
-/**
- * Token counts run to tens of millions once cache reads are included, so raw digits are
- * unreadable at a glance and the exact figure is never the point.
- */
-export function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M tok`
-  if (count >= 1_000) return `${Math.round(count / 1_000)}k tok`
-  return `${count} tok`
-}
 
 function duration(session: SessionBandInfo): string {
   const minutes = Math.round((session.endedAt - session.startedAt) / 60_000)
