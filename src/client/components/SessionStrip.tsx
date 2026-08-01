@@ -23,6 +23,8 @@ interface SessionStripProps {
   sessions: SessionBandInfo[]
   /** Epoch millis, shared with the rest of the render so every row agrees on "now". */
   now: number
+  /** Open a session's prompts. The card holds counts; the panel holds what was typed. */
+  onOpen: (card: SessionCard) => void
 }
 
 export interface SessionCard {
@@ -79,7 +81,7 @@ export function toCards(sessions: SessionBandInfo[]): SessionCard[] {
   return [...merged.values()].sort((a, b) => b.endedAt - a.endedAt)
 }
 
-export function SessionStrip({ sessions, now }: SessionStripProps) {
+export function SessionStrip({ sessions, now, onOpen }: SessionStripProps) {
   const cards = toCards(sessions)
   if (cards.length === 0) return null
 
@@ -90,17 +92,38 @@ export function SessionStrip({ sessions, now }: SessionStripProps) {
       </span>
       <div className="sstrip__cards">
         {cards.map((card) => (
-          <Card key={card.sessionId} card={card} now={now} />
+          <Card key={card.sessionId} card={card} now={now} onOpen={onOpen} />
         ))}
       </div>
     </div>
   )
 }
 
-function Card({ card, now }: { card: SessionCard; now: number }) {
+/**
+ * A card is a button, not an article with a click handler.
+ *
+ * It opens a dialog, so it has to be reachable and operable from the keyboard, and the
+ * element that already does that correctly in every browser is `<button>`. The whole card
+ * is the target rather than an affordance tucked in a corner: at this size a separate
+ * control would be most of the card anyway.
+ */
+function Card({
+  card,
+  now,
+  onOpen,
+}: {
+  card: SessionCard
+  now: number
+  onOpen: (card: SessionCard) => void
+}) {
   const live = card.live !== null
   return (
-    <article className={live ? 'scard scard--live' : 'scard'} title={tooltip(card, now)}>
+    <button
+      className={live ? 'scard scard--live' : 'scard'}
+      title={tooltip(card, now)}
+      type="button"
+      onClick={() => onOpen(card)}
+    >
       <div className="scard__top">
         {live && <span className="scard__dot" aria-hidden="true" />}
         <span className="scard__title">{card.title ?? 'Untitled session'}</span>
@@ -141,7 +164,7 @@ function Card({ card, now }: { card: SessionCard; now: number }) {
         {card.outputTokens > 0 && <span>{formatTokens(card.outputTokens)} out</span>}
         {card.inputTokens > 0 && <span>{formatTokens(card.inputTokens)} in</span>}
       </div>
-    </article>
+    </button>
   )
 }
 

@@ -136,6 +136,14 @@ export interface SessionPrompt {
   /** Epoch milliseconds. */
   at: number
   text: string
+  /**
+   * Wall-clock the turn this prompt started took, per Claude Code's own `turn_duration`
+   * record. Null when none was written — a turn interrupted, or still running.
+   *
+   * This is measured, not inferred. The gap to the next prompt would be the obvious
+   * substitute and would be wrong by however long you went to lunch.
+   */
+  durationMs: number | null
 }
 
 export interface SessionRecord {
@@ -160,6 +168,18 @@ export interface SessionRecord {
   title: string | null
   /** Human turns only, excluding tool results and sub-agent traffic. */
   prompts: SessionPrompt[]
+  /**
+   * Time actually spent working, summed over the session's recorded turns.
+   *
+   * Emphatically not `end - start`. A session left open overnight spans sixteen hours and
+   * worked for forty minutes of them, so the span answers "when" and this answers "how
+   * long" — they differ by an order of magnitude on ordinary sessions.
+   *
+   * Null when no turn duration was recorded at all, which is not the same as zero: older
+   * Claude Code versions never wrote the record, and a session whose only turn was
+   * interrupted has none. Null means unknown and must render as absent, not as "0m".
+   */
+  workingMs: number | null
   inputTokens: number
   outputTokens: number
   /** Last model seen on an assistant record. */
@@ -289,6 +309,17 @@ async function parseTranscript(file: string): Promise<SessionRecord | null> {
   let version: string | null = null
   let inputTokens = 0
   let outputTokens = 0
+  let workingMs: number | null = null
+  /*
+   * The prompt a `turn_duration` belongs to.
+   *
+   * Claude Code writes the duration at the *end* of a turn, so the turn it measures is the
+   * one the most recent prompt started. Following `parentUuid` back through the message
+   * chain would be the precise answer and would couple this to a second internal format;
+   * the records are in file order, so the last prompt seen is the same answer for a cost of
+   * one variable.
+   */
+  let openTurn: SessionPrompt | null = null
 
   let stream
   try {
@@ -330,7 +361,30 @@ async function parseTranscript(file: string): Promise<SessionRecord | null> {
 
       if (type === 'user' && isHumanTurn(record) && at !== null) {
         const text = promptText(record)
-        if (text) prompts.push({ at, text })
+        if (text) {
+          const prompt: SessionPrompt = { at, text, durationMs: null }
+          prompts.push(prompt)
+          openTurn = prompt
+        }
+        continue
+      }
+
+      /*
+       * How long a turn took, as Claude Code measured it.
+       *
+       * Sub-agent traffic is excluded for the same reason it is excluded from the prompt
+       * count: a sub-agent's turns run inside the parent's, so adding them would count the
+       * same wall-clock twice and produce a session that worked longer than it existed.
+       *
+       * Summed rather than assigned, because a turn resumed after a permission prompt
+       * writes more than one record against the same prompt.
+       */
+      if (type === 'system' && str(record.subtype) === 'turn_duration' && record.isSidechain !== true) {
+        const ms = num(record.durationMs)
+        if (ms > 0) {
+          workingMs = (workingMs ?? 0) + ms
+          if (openTurn) openTurn.durationMs = (openTurn.durationMs ?? 0) + ms
+        }
         continue
       }
 
@@ -371,6 +425,7 @@ async function parseTranscript(file: string): Promise<SessionRecord | null> {
     activity,
     title,
     prompts,
+    workingMs,
     inputTokens,
     outputTokens,
     model,
@@ -397,17 +452,57 @@ function isHumanTurn(record: Record<string, unknown>): boolean {
 function promptText(record: Record<string, unknown>): string | null {
   const message = obj(record.message)
   const content = message?.content
-  if (typeof content === 'string') return content.trim() || null
 
-  if (Array.isArray(content)) {
-    const text = content
-      .map((block) => (typeof block === 'object' && block !== null ? str((block as Record<string, unknown>).text) : null))
-      .filter((t): t is string => Boolean(t))
-      .join('\n')
-      .trim()
-    return text || null
+  let text: string | null = null
+  if (typeof content === 'string') {
+    text = content.trim() || null
+  } else if (Array.isArray(content)) {
+    text =
+      content
+        .map((block) => (typeof block === 'object' && block !== null ? str((block as Record<string, unknown>).text) : null))
+        .filter((t): t is string => Boolean(t))
+        .join('\n')
+        .trim() || null
   }
-  return null
+
+  return text === null ? null : readable(text)
+}
+
+/**
+ * Turn a stored user record into what the person actually typed, or drop it.
+ *
+ * Not everything Claude Code files under `type: 'user'` came off a keyboard. Three shapes
+ * show up in the transcripts here, all of them written *by* the tool and merely attributed
+ * to the user, and all three read as gibberish in a list of prompts:
+ *
+ *   - a slash command, stored as `<command-name>/clear</command-name>` plus two sibling
+ *     tags. This one *is* a human action, so it is unwrapped to `/clear` rather than
+ *     dropped — losing it would leave an unexplained gap in the timeline.
+ *   - `[Request interrupted by user]`, filed when you press escape. A real event, but not
+ *     a prompt, and it carries none of the information a prompt does.
+ *   - `<local-command-stdout>`, the output of a command you ran with `!`.
+ *
+ * Matched on the markup rather than on the absence of `origin`/`promptSource`, which is
+ * the structural tell in the transcripts written today. Those fields are recent — an older
+ * transcript has neither on any record, so keying off them would silently empty the panel
+ * for every session written before they existed. Text that matches nothing here passes
+ * through verbatim, which is also what a future format change degrades to.
+ */
+function readable(text: string): string | null {
+  const command = /^<command-name>([^<]*)<\/command-name>/.exec(text)
+  if (command) {
+    const name = command[1]!.trim()
+    const args = /<command-args>([^<]*)<\/command-args>/.exec(text)?.[1]?.trim() ?? ''
+    if (name === '') return null
+    return args === '' ? name : `${name} ${args}`
+  }
+
+  if (text.startsWith('<local-command-stdout>')) return null
+  if (text === '[Request interrupted by user]') return null
+  // The same interrupt, as written when a tool call was in flight.
+  if (/^\[Request interrupted by user[^\]]*\]$/.test(text)) return null
+
+  return text
 }
 
 function parseTime(value: unknown): number | null {

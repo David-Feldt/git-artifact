@@ -1,7 +1,7 @@
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { DirtyFile, WorktreeStatus } from '../api.js'
-import { git } from './exec.js'
+import { git, gitOrNull } from './exec.js'
 
 /**
  * Half-life of the activity-heat signal, in milliseconds.
@@ -44,7 +44,8 @@ export async function readStatus(
   ])
 
   const parsed = parseStatus(raw)
-  const files = await withMtimes(worktreePath, parsed.files, now)
+  const counts = await readNumstat(worktreePath)
+  const files = await withMtimes(worktreePath, parsed.files, now, counts)
 
   return {
     path: worktreePath,
@@ -59,6 +60,103 @@ export async function readStatus(
   }
 }
 
+/** Lines added and removed for one path. */
+export interface LineCount {
+  added: number | null
+  deleted: number | null
+}
+
+/**
+ * Largest untracked file worth counting lines in.
+ *
+ * A new file has no diff to ask git for, so the only way to a number is to read it. That is
+ * fine for the source file you just created and wrong for a 40 MB fixture someone dropped
+ * in the tree, on a read that repeats every time the working tree changes. Past the cap the
+ * count is reported as unknown, which is honest and costs nothing.
+ */
+const UNTRACKED_SCAN_LIMIT = 512 * 1024
+
+/**
+ * Lines changed per path, against `HEAD`.
+ *
+ * One spawn for the whole worktree rather than one per file. `HEAD` rather than the default
+ * unstaged-only diff, so a file that is staged still reports its numbers — otherwise
+ * `git add` would silently blank the counts on the WIP node.
+ *
+ * Tier A is the working-tree status itself; these numbers are enrichment on top of it, so
+ * every failure here is an empty map. An empty repository has no `HEAD` to diff against and
+ * takes exactly that path.
+ */
+export async function readNumstat(worktreePath: string): Promise<Map<string, LineCount>> {
+  const raw = await gitOrNull(worktreePath, ['diff', '--numstat', '-z', 'HEAD'])
+  return raw === null ? new Map() : parseNumstat(raw)
+}
+
+/**
+ * Parse NUL-delimited `--numstat` output. Exported for tests, like {@link parseStatus}.
+ *
+ * A record is `added \t deleted \t path NUL`, except for a rename: there the path is empty
+ * and the two fields that follow are the old and new paths. Consuming those is the only way
+ * to stay aligned with the stream — and parsing line-wise instead would reintroduce exactly
+ * the quoting problem `-z` exists to avoid.
+ */
+export function parseNumstat(raw: string): Map<string, LineCount> {
+  const counts = new Map<string, LineCount>()
+  const records = raw.split('\0')
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i]
+    if (!record) continue
+
+    const parts = record.split('\t')
+    if (parts.length < 2) continue
+
+    const added = countOrNull(parts[0])
+    const deleted = countOrNull(parts[1])
+
+    let filePath = parts[2] ?? ''
+    if (filePath === '') {
+      // Rename: the new path is the second of the two fields that follow. The file is
+      // recorded under where it is now, which is the name the status output uses too.
+      filePath = records[i + 2] ?? ''
+      i += 2
+    }
+    if (filePath !== '') counts.set(filePath, { added, deleted })
+  }
+
+  return counts
+}
+
+/** git writes `-` for a binary file, which is "no line count", not zero. */
+function countOrNull(field: string | undefined): number | null {
+  if (field === undefined || field === '-') return null
+  const value = Number(field)
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * Lines in an untracked file, which has no diff for git to report.
+ *
+ * Counted as all-added, because that is what it is. A NUL byte anywhere means binary, and
+ * binary means no count — the same answer git gives for a tracked binary, so the two kinds
+ * of file do not disagree about what they are.
+ */
+async function countUntracked(absolute: string, size: number): Promise<LineCount> {
+  if (size > UNTRACKED_SCAN_LIMIT) return { added: null, deleted: null }
+  try {
+    const buffer = await readFile(absolute)
+    if (buffer.includes(0)) return { added: null, deleted: null }
+    if (buffer.length === 0) return { added: 0, deleted: 0 }
+    let lines = 0
+    for (const byte of buffer) if (byte === 0x0a) lines += 1
+    // A final line with no trailing newline still counts, which is how git counts it.
+    if (buffer[buffer.length - 1] !== 0x0a) lines += 1
+    return { added: lines, deleted: 0 }
+  } catch {
+    return { added: null, deleted: null }
+  }
+}
+
 export interface ParsedStatus {
   branch: string | null
   head: string | null
@@ -66,7 +164,13 @@ export interface ParsedStatus {
   upstream: string | null
   ahead: number | null
   behind: number | null
-  files: Array<Omit<DirtyFile, 'mtimeMs' | 'heat'>>
+  /**
+   * Everything `git status` alone can say about a file.
+   *
+   * The line counts are omitted alongside mtime and heat because none of the three is in
+   * the status output — they are attached afterwards, from a separate diff and a `stat`.
+   */
+  files: Array<Omit<DirtyFile, 'mtimeMs' | 'heat' | 'added' | 'deleted'>>
 }
 
 /**
@@ -178,27 +282,49 @@ function applyHeader(header: string, result: ParsedStatus): void {
 }
 
 /**
- * Attach mtimes and heat.
+ * Attach mtimes, heat and line counts.
  *
  * `stat` runs across all dirty files concurrently. That is bounded work — it is the size
  * of your uncommitted change set, not the size of the repo — so it stays cheap even on a
  * large tree. A file that vanished between `git status` and here yields a null mtime
  * rather than an error, which happens routinely when a build process is running.
+ *
+ * The counts arrive already gathered for tracked files, in one diff. Only an untracked file
+ * needs anything further, and the `stat` this already does is what decides whether it is
+ * small enough to be worth reading.
  */
 async function withMtimes(
   root: string,
   files: ParsedStatus['files'],
   now: number,
+  counts: Map<string, LineCount>,
 ): Promise<DirtyFile[]> {
   return Promise.all(
     files.map(async (file): Promise<DirtyFile> => {
+      const absolute = path.join(root, file.path)
+
       let mtimeMs: number | null = null
+      let size: number | null = null
       try {
-        mtimeMs = (await stat(path.join(root, file.path))).mtimeMs
+        const info = await stat(absolute)
+        mtimeMs = info.mtimeMs
+        size = info.size
       } catch {
         mtimeMs = null
       }
-      return { ...file, mtimeMs, heat: heatFromMtime(mtimeMs, now) }
+
+      let lines: LineCount = counts.get(file.path) ?? { added: null, deleted: null }
+      if (file.untracked && size !== null) {
+        lines = await countUntracked(absolute, size)
+      }
+
+      return {
+        ...file,
+        mtimeMs,
+        added: lines.added,
+        deleted: lines.deleted,
+        heat: heatFromMtime(mtimeMs, now),
+      }
     }),
   )
 }

@@ -121,6 +121,9 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       case '/api/commit':
         await sendCommitDetail(url, res)
         return
+      case '/api/session':
+        await sendSessionDetail(url, res)
+        return
       case '/api/events':
         openEventStream(req, res)
         return
@@ -160,6 +163,29 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       }
       throw err
     }
+  }
+
+  /**
+   * One session's prompts and timings, for an opened card.
+   *
+   * The id never reaches the filesystem — it is matched against the ids parsed out of the
+   * transcripts already in hand, so there is no path to traverse and no revision to
+   * resolve. The shape check is therefore cheap defence rather than the thing keeping this
+   * safe: it rejects the obviously-not-an-id before a directory scan is spent on it.
+   */
+  async function sendSessionDetail(url: URL, res: ServerResponse): Promise<void> {
+    const id = url.searchParams.get('id') ?? ''
+    if (!isValidSessionId(id)) {
+      sendJson(res, 400, { error: 'A session id is required.' })
+      return
+    }
+
+    const detail = await store.getSessionDetail(id)
+    if (detail === null) {
+      sendJson(res, 404, { error: 'No transcript for that session in this repository.' })
+      return
+    }
+    sendJson(res, 200, detail)
   }
 
   /**
@@ -262,6 +288,18 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
         server.close(() => resolve())
       }),
   }
+}
+
+/**
+ * A session id, as Claude Code writes them.
+ *
+ * Uuids in every transcript observed, but the check is deliberately looser than a uuid
+ * pattern: the id is carried through from the transcript, and rejecting a future format on
+ * a guess about its shape would break the panel for no gain. Length and character class are
+ * enough to bound the work.
+ */
+function isValidSessionId(id: string): boolean {
+  return id.length > 0 && id.length <= 128 && /^[A-Za-z0-9._-]+$/.test(id)
 }
 
 /**

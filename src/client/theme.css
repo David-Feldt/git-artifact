@@ -712,9 +712,24 @@ body {
 
 /* ----------------------------------------------------------------- wip node */
 
+/*
+ * Uncommitted work, in a light orange box.
+ *
+ * The tint is the one thing separating this row from the commits below it, and it is kept
+ * pale on purpose: the node sits at the top of the graph where the eye lands first, and a
+ * saturated block there would out-shout the history it is attached to. What it needs to say
+ * is "this is not a commit yet", not "look at me".
+ *
+ * The dashed border stays and is doing the same job — nothing here is written down yet.
+ * Colour alone would leave that distinction resting on hue.
+ *
+ * Mixed from `--artifact-ready` rather than the heat ramp: heat means recency *inside* this
+ * node, on the file chips, and a warm background from the same ramp would read as the whole
+ * node being hot.
+ */
 .wip .card {
-  background: var(--card);
-  border: 1px dashed var(--rule-strong);
+  background: color-mix(in srgb, var(--artifact-ready) 9%, var(--card));
+  border: 1px dashed color-mix(in srgb, var(--artifact-ready) 38%, var(--rule-strong));
   box-shadow: var(--shadow-card);
 }
 
@@ -753,13 +768,64 @@ body {
   border: 1px solid color-mix(in srgb, var(--heat-bg, var(--heat-0)) 65%, var(--ink-muted));
   white-space: nowrap;
   max-width: 220px;
+  /* The ellipsis moved onto `.wip__name`, which is the only child that may shrink. Left
+     here it applied to the chip as a whole and clipped whatever came last — the counts. */
+  overflow: hidden;
+}
+
+.wip__status {
+  flex: none;
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+/*
+ * How much of the file changed, at the tail of its chip.
+ *
+ * `tabular-nums` so the numbers keep a fixed advance and the chips stop jittering sideways
+ * as counts tick up while you type — this is a live view and these change on every save.
+ *
+ * Reuses the diff inks the expanded panel already uses, so `+` means the same green in both
+ * places. That pair is red/green, which is the one colour choice in this theme that
+ * deuteranopia collapses; it is safe here only because it never carries the meaning alone —
+ * the literal `+` and `−` signs are the encoding, and the colour is a second channel on top.
+ */
+.wip__name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.wip__status {
-  color: var(--ink-secondary);
-  font-weight: 600;
+/*
+ * The counts sit on their own light backing rather than straight on the chip.
+ *
+ * The chip's background is the heat ramp, which runs to `--heat-4` on a file you are
+ * editing right now — and that is exactly when the counts matter most. Measured against it,
+ * the diff inks land near 2.7:1, which is illegible at this size. A near-opaque card-
+ * coloured pill puts them back on the surface those inks were contrast-checked against, and
+ * it holds at every step of the ramp rather than only at the cold end.
+ *
+ * It also earns its keep semantically: "which file" and "how much" are two different facts,
+ * and the backing is what separates them inside one chip.
+ */
+.wip__lines {
+  display: inline-flex;
+  gap: 4px;
+  /* Never shrinks: the chip is allowed to elide the filename, never the numbers. */
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  font-variant-numeric: tabular-nums;
+  font-size: 9.5px;
+}
+
+.wip__added {
+  color: var(--diff-add-ink);
+}
+
+.wip__deleted {
+  color: var(--diff-del-ink);
 }
 
 .wip__more {
@@ -1340,4 +1406,296 @@ body {
   opacity: 1;
   outline: 2px solid var(--artifact-accent);
   outline-offset: 1px;
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────────────────
+ * Session prompts
+ *
+ * The card in the strip is a button now, so it carries the affordances of one — a hover
+ * lift, a focus ring, and a pointer. It keeps its own visual weight: cursor and elevation
+ * rather than a border colour, because the border already means "this session is live" and
+ * a second meaning on the same property would collide.
+ */
+.scard {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: box-shadow 90ms ease-out, background 90ms ease-out, transform 90ms ease-out;
+}
+
+.scard:hover {
+  background: var(--card-hover);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-1px);
+}
+
+.scard:focus-visible {
+  outline: 2px solid var(--lane-1);
+  outline-offset: 2px;
+}
+
+/*
+ * The panel drops from the top, under the strip it was opened from.
+ *
+ * Anchored rather than centred so the movement reads as the card unfolding — the eye
+ * follows it down from where the click landed instead of relocating to the middle of the
+ * screen. Bounded at 70vh with the list scrolling inside: a session with forty prompts is
+ * ordinary, and a dialog taller than the viewport is a page with two scrollbars.
+ */
+.smodal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 96px 18px 32px;
+  background: rgb(42 38 34 / 0.28);
+}
+
+.smodal__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 70vh;
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(42 38 34 / 0.22);
+  overflow: hidden;
+  animation: sdrop 130ms ease-out;
+}
+
+@keyframes sdrop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* The drop is orientation, not decoration, so it is the only thing dropped when motion is
+   unwelcome — the panel still appears, it simply arrives already in place. */
+@media (prefers-reduced-motion: reduce) {
+  .smodal__panel {
+    animation: none;
+  }
+  .scard {
+    transition: none;
+  }
+  .scard:hover {
+    transform: none;
+  }
+}
+
+.smodal__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule);
+  flex: none;
+}
+
+/* Same dot as the card's, and deliberately identical: it is the same fact, and a second
+   rendering of "this session is running" would read as a second claim. */
+.smodal__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--lane-7);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lane-7) 18%, transparent);
+}
+
+.smodal__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smodal__close {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.smodal__close:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.smodal__close:focus-visible {
+  outline: 2px solid var(--lane-1);
+  outline-offset: 1px;
+}
+
+/*
+ * Working time and elapsed span, side by side.
+ *
+ * Both, always, because either alone misleads: a session left open overnight spans sixteen
+ * hours and worked for forty minutes of them. Tabular figures so the numbers line up when
+ * the panel is reopened on a different session.
+ */
+.smodal__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--card) 35%, var(--paper));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.smodal__spacer {
+  flex: 1;
+}
+
+.smodal__live {
+  color: var(--lane-7);
+}
+
+.smodal__body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.smodal__notice {
+  margin: 0;
+  padding: 24px 14px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.smodal__foot {
+  flex: none;
+  padding: 7px 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.smodal__prompts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * One prompt: a timing gutter and the text.
+ *
+ * The gutter is fixed-width and monospaced so the times form a column you can scan for
+ * "when did I ask for that" without reading any of the prompts — which is most of what this
+ * panel is for on a long session.
+ */
+.sprompt {
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sprompt:last-child {
+  border-bottom: none;
+}
+
+.sprompt__gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  width: 58px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+  padding-top: 1px;
+}
+
+.sprompt__at {
+  color: var(--ink-secondary);
+}
+
+/*
+ * How long the turn took, per Claude Code's own measurement.
+ *
+ * Boxed rather than plain so it does not read as a second timestamp — it is a span, and the
+ * two would otherwise sit in the same column looking like the same kind of number.
+ */
+.sprompt__took {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0 4px;
+  background: var(--paper);
+}
+
+.sprompt__main {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * Untrusted text, rendered as a text node and wrapped rather than parsed.
+ *
+ * `pre-wrap` keeps the shape of what was typed — a pasted stack trace stays a stack trace —
+ * and `overflow-wrap` stops a long unbroken path from pushing the panel wider than its box.
+ */
+.sprompt__text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sprompt__text--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sprompt__more {
+  margin-top: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.sprompt__more:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.sprompt__more:focus-visible {
+  outline: 2px solid var(--lane-1);
+  outline-offset: 2px;
+  border-radius: 2px;
 }

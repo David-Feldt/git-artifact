@@ -42,12 +42,48 @@ function FileChip({ file }: { file: DirtyFile }) {
     <span
       className="wip__file"
       style={{ ['--heat-bg' as string]: heatColor(file.heat) }}
-      title={`${file.path} · ${describeStatus(file)}`}
+      title={`${file.path} · ${describeStatus(file)}${describeLines(file)}`}
     >
       <span className="wip__status">{file.status.trim() || '·'}</span>
-      {basename(file.path)}
+      {/* The name is the only part allowed to shrink. It was a bare text node, which meant
+          the chip truncated from its right edge and ate the counts first — the numbers are
+          the point of the chip, and a name is still recognisable half-elided. */}
+      <span className="wip__name">{basename(file.path)}</span>
+      <FileLines file={file} />
     </span>
   )
+}
+
+/**
+ * How much of the file changed, as `+n −n`.
+ *
+ * Each side is dropped when it is zero rather than printed as `+0`, so a pure addition
+ * reads as one number instead of two — half the chips in a working tree are one-sided, and
+ * a column of `+12 −0` is noise pretending to be data.
+ *
+ * A null count is not zero: it means nobody could count, which is the case for a binary
+ * file and for an untracked file too large to scan. Those render nothing at all, because a
+ * number that is not known should not be shown as one that is.
+ */
+function FileLines({ file }: { file: DirtyFile }) {
+  const added = file.added ?? 0
+  const deleted = file.deleted ?? 0
+  if (file.added === null && file.deleted === null) return null
+  if (added === 0 && deleted === 0) return null
+
+  return (
+    <span className="wip__lines">
+      {added > 0 && <span className="wip__added">+{added}</span>}
+      {/* U+2212 minus, not a hyphen: it matches the plus in width and weight, so the two
+          columns line up instead of the minus reading as a dash in the filename. */}
+      {deleted > 0 && <span className="wip__deleted">−{deleted}</span>}
+    </span>
+  )
+}
+
+function describeLines(file: DirtyFile): string {
+  if (file.added === null && file.deleted === null) return ''
+  return ` · +${file.added ?? 0} −${file.deleted ?? 0}`
 }
 
 /** The ramp itself is `--heat-0` … `--heat-4`; the thresholds live in format.ts. */

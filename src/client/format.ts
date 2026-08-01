@@ -28,6 +28,27 @@ export function relativeTime(timestamp: number, now: number): string {
 }
 
 /**
+ * An elapsed duration, as a span rather than a point in time.
+ *
+ * Distinct from {@link relativeTime} on purpose. That one answers "how long ago" and rounds
+ * hard because the reader only wants the magnitude; this answers "how long did it take",
+ * where the minutes matter — `1h 12m` is a different afternoon from `1h`.
+ *
+ * Sub-minute turns are common and are the reason seconds survive at the bottom of the
+ * scale: a great many turns are eight seconds long, and rounding those to `0m` would make
+ * the column look broken.
+ */
+export function formatDuration(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+}
+
+/**
  * Token counts run to tens of millions once cache reads are included, so raw digits are
  * unreadable at a glance and the exact figure is never the point.
  */

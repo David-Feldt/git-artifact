@@ -17,6 +17,19 @@ export interface DirtyFile {
   /** Last modification time in epoch milliseconds, or null if the file has gone. */
   mtimeMs: number | null
   /**
+   * Lines added and removed against `HEAD`, or null when the number is not knowable.
+   *
+   * Null rather than zero, and the distinction is the point: zero means "git looked and
+   * nothing changed", null means "nobody counted". Binary files are null because git counts
+   * no lines for them, and so is an untracked file too large to scan.
+   *
+   * Staged and unstaged are deliberately summed rather than reported apart. This is the
+   * WIP node — the question it answers is "how much uncommitted work is here", and where a
+   * hunk sits in the index is a different question the expanded panel is for.
+   */
+  added: number | null
+  deleted: number | null
+  /**
    * Recency score in `[0,1]` from an exponential decay on `mtimeMs`. 1 means "touched
    * just now". This is the activity-heat signal the UI renders as colour temperature.
    */
@@ -159,6 +172,65 @@ export interface CommitStat {
   files: number
   additions: number
   deletions: number
+}
+
+/** One human turn, as it will be read in the session panel. */
+export interface SessionPromptInfo {
+  /** Epoch milliseconds. */
+  at: number
+  /**
+   * What was typed, verbatim.
+   *
+   * **Untrusted text.** It is whatever the person pasted into a terminal, which routinely
+   * includes markup, and it arrives here without ever having been sanitised. It must reach
+   * the DOM as a text node — never as HTML — and it must not be interpolated into a
+   * generated artifact page, which is served from an origin that carries the session cookie.
+   */
+  text: string
+  /** Wall-clock the turn took, or null when Claude Code recorded none. */
+  durationMs: number | null
+  /** The text was cut to fit the payload budget; see {@link SessionDetail.clipped}. */
+  clipped: boolean
+}
+
+/**
+ * One session's prompts and timings, fetched when a card is opened.
+ *
+ * Not part of {@link GraphPayload}, for the reason {@link CommitDetail} is not: the graph is
+ * pushed down an SSE on every ref change, and prompt text is unbounded — a single pasted
+ * prompt measured 83 KB on this repository. Shipping it with every refresh would spend the
+ * update path's whole budget on data nobody has asked to see.
+ *
+ * Everything here is read from the transcript rather than inferred. Unlike a commit-to-
+ * session attribution, none of it is a guess, so the panel makes no claim it cannot support.
+ */
+export interface SessionDetail {
+  sessionId: string
+  title: string | null
+  branches: string[]
+  /** Epoch milliseconds bounding the session, idle time included. */
+  startedAt: number
+  endedAt: number
+  /**
+   * Time actually spent working, summed over recorded turns — not `endedAt - startedAt`.
+   *
+   * Null means no turn duration was recorded, which is not zero. Render it as absent.
+   */
+  workingMs: number | null
+  inputTokens: number
+  outputTokens: number
+  model: string | null
+  /** Human turns only, oldest first. Tool results and sub-agent traffic are excluded. */
+  prompts: SessionPromptInfo[]
+  /**
+   * Some prompt text was dropped to bound the response.
+   *
+   * Announced rather than applied quietly, like the diff budget: text that simply stops
+   * reads as a bug in the tool, where "clipped" reads as a long prompt.
+   */
+  clipped: boolean
+  /** Non-null only while the session is running. See {@link SessionLiveness}. */
+  live: SessionLiveness | null
 }
 
 export interface GraphPayload {

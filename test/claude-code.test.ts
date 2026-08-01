@@ -51,6 +51,19 @@ const userRecord = (cwd: string, min: number, text: string, extra = {}) => ({
   ...extra,
 })
 
+/** Claude Code's own measurement of a turn, written when the turn ends. */
+const turnDuration = (cwd: string, min: number, durationMs: number, extra = {}) => ({
+  type: 'system',
+  subtype: 'turn_duration',
+  sessionId: 's1',
+  cwd,
+  timestamp: stamp(min),
+  durationMs,
+  messageCount: 4,
+  isSidechain: false,
+  ...extra,
+})
+
 const assistantRecord = (cwd: string, min: number, usage: Record<string, number>) => ({
   type: 'assistant',
   sessionId: 's1',
@@ -129,6 +142,128 @@ describe('readSession', () => {
 
     const session = (await readSession(file))!
     expect(session.prompts.map((p) => p.text)).toEqual(['real prompt'])
+  })
+
+  it('sums turn durations and attributes each to the prompt that started it', async () => {
+    /*
+     * Working time is measured, not inferred. The gap between prompts is the obvious
+     * substitute and is wrong by however long you went to lunch — this fixture makes the
+     * difference explicit: two turns totalling 105s inside a session spanning 40 minutes.
+     */
+    const home = fakeHome()
+    const cwd = '/repo'
+    const file = writeTranscript(home, cwd, 'abc', [
+      userRecord(cwd, 0, 'first'),
+      turnDuration(cwd, 1, 90_000),
+      userRecord(cwd, 30, 'second'),
+      turnDuration(cwd, 40, 15_000),
+    ])
+
+    const session = (await readSession(file))!
+    expect(session.workingMs).toBe(105_000)
+    expect(session.prompts.map((p) => p.durationMs)).toEqual([90_000, 15_000])
+    // The span is 40 minutes and the work was under two. Conflating them is the whole
+    // reason both are carried.
+    expect(session.end - session.start).toBe(40 * 60_000)
+  })
+
+  it('sums several duration records against one prompt', async () => {
+    // A turn resumed after a permission prompt writes more than one record for the same
+    // human turn. Assigning rather than adding would report only the last leg.
+    const home = fakeHome()
+    const cwd = '/repo'
+    const file = writeTranscript(home, cwd, 'abc', [
+      userRecord(cwd, 0, 'one'),
+      turnDuration(cwd, 1, 5_000),
+      turnDuration(cwd, 2, 7_000),
+    ])
+
+    const session = (await readSession(file))!
+    expect(session.prompts[0]!.durationMs).toBe(12_000)
+    expect(session.workingMs).toBe(12_000)
+  })
+
+  it('ignores sub-agent turn durations', async () => {
+    // A sub-agent's turns run *inside* the parent's, so counting them would double-count
+    // the same wall-clock and produce a session that worked longer than it existed.
+    const home = fakeHome()
+    const cwd = '/repo'
+    const file = writeTranscript(home, cwd, 'abc', [
+      userRecord(cwd, 0, 'one'),
+      turnDuration(cwd, 1, 8_000),
+      turnDuration(cwd, 2, 60_000, { isSidechain: true }),
+    ])
+
+    const session = (await readSession(file))!
+    expect(session.workingMs).toBe(8_000)
+  })
+
+  it('reports unknown working time as null, never as zero', async () => {
+    /*
+     * Older Claude Code versions never wrote the record, and a session whose only turn was
+     * interrupted has none. Zero would render as "0s working" — a claim the transcript
+     * does not make — where null renders as absent.
+     */
+    const home = fakeHome()
+    const cwd = '/repo'
+    const file = writeTranscript(home, cwd, 'abc', [userRecord(cwd, 0, 'one')])
+
+    const session = (await readSession(file))!
+    expect(session.workingMs).toBeNull()
+    expect(session.prompts[0]!.durationMs).toBeNull()
+  })
+
+  it('unwraps a slash command and drops the records nobody typed', async () => {
+    /*
+     * Claude Code files three things under `type: 'user'` that no one typed. Each was
+     * observed verbatim in the transcripts for this repository, and each read as gibberish
+     * in a list of prompts before this.
+     *
+     * The slash command is kept, because pressing `/clear` *is* a human action — dropping
+     * it would leave an unexplained gap where a session visibly restarts.
+     */
+    const home = fakeHome()
+    const cwd = '/repo'
+    const file = writeTranscript(home, cwd, 'abc', [
+      userRecord(
+        cwd,
+        0,
+        '<command-name>/clear</command-name>\n            <command-message>clear</command-message>\n            <command-args></command-args>',
+      ),
+      userRecord(cwd, 1, '[Request interrupted by user]'),
+      userRecord(cwd, 2, '<local-command-stdout>(no content)</local-command-stdout>'),
+      userRecord(
+        cwd,
+        3,
+        '<command-name>/loop</command-name>\n<command-args>5m check the build</command-args>',
+      ),
+      userRecord(cwd, 4, 'a real prompt'),
+    ])
+
+    const session = (await readSession(file))!
+    expect(session.prompts.map((p) => p.text)).toEqual([
+      '/clear',
+      '/loop 5m check the build',
+      'a real prompt',
+    ])
+  })
+
+  it('passes unrecognised text through verbatim', async () => {
+    // The tags are matched rather than the absence of `origin`/`promptSource`, which are
+    // recent fields. Keying off those would empty the panel for every older transcript,
+    // where no record has them. Anything unmatched must survive untouched.
+    const home = fakeHome()
+    const cwd = '/repo'
+    const file = writeTranscript(home, cwd, 'abc', [
+      userRecord(cwd, 0, 'talk about <command-name> in a sentence'),
+      userRecord(cwd, 1, '[Request interrupted by user] and then I said more'),
+    ])
+
+    const session = (await readSession(file))!
+    expect(session.prompts.map((p) => p.text)).toEqual([
+      'talk about <command-name> in a sentence',
+      '[Request interrupted by user] and then I said more',
+    ])
   })
 
   it('records every cwd a session moved through', async () => {

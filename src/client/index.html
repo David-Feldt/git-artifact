@@ -6,6 +6,10 @@
     <!-- Nothing is loaded from anywhere but this daemon, and the token lives in the URL,
          so keep it out of any Referer header a stray link might produce. -->
     <meta name="referrer" content="no-referrer" />
+    <!-- Served from this daemon like everything else. An SVG so one file covers every
+         density, and no `.ico` fallback: the browsers this runs in all support it, and a
+         second file would be a second thing to keep in step with `icons.ts`. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>git-artifact</title>
   </head>
   <body>

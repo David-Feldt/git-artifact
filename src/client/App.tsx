@@ -4,7 +4,8 @@ import { CommitCard } from './components/CommitCard.js'
 import { CommitDetailPanel } from './components/CommitDetail.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
-import { SessionStrip } from './components/SessionStrip.js'
+import { SessionStrip, type SessionCard } from './components/SessionStrip.js'
+import { SessionModal } from './components/SessionModal.js'
 import { ViewTabs } from './components/ViewTabs.js'
 import {
   DETAIL_HEIGHT,
@@ -18,6 +19,7 @@ import {
   rowTop,
 } from './components/layout.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
+import { useSessionDetail } from './hooks/useSessionDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
 import { ALL_VIEW, buildViews, selectView } from './views.js'
 
@@ -98,6 +100,17 @@ export function App() {
   const detail = useCommitDetail(expanded?.sha ?? null)
 
   const close = useCallback(() => setSelected(null), [])
+
+  /*
+   * The session whose prompts are open, held as the whole card rather than as an id.
+   *
+   * The card is already in hand at the moment of the click and carries the title, so the
+   * panel has a header to draw before its fetch returns. Holding an id would give it a
+   * blank frame on every open for no saving.
+   */
+  const [openSession, setOpenSession] = useState<SessionCard | null>(null)
+  const sessionDetail = useSessionDetail(openSession?.sessionId ?? null)
+  const closeSession = useCallback(() => setOpenSession(null), [])
 
 
   /**
@@ -201,7 +214,7 @@ export function App() {
       {/* Unscoped `graph`, not the tab's `vgraph`: a session is not a property of a
           worktree's slice of history, and filtering the strip by the active tab would
           imply a relationship to those commits that is exactly what this drops. */}
-      {graph && <SessionStrip sessions={graph.sessions} now={now} />}
+      {graph && <SessionStrip sessions={graph.sessions} now={now} onOpen={setOpenSession} />}
 
       <div className="banners">
         {graph && <StateBanners repo={graph.repo} capped={graph.capped} maxCount={graph.maxCount} />}
@@ -293,6 +306,17 @@ export function App() {
           </div>
         )}
       </div>
+
+      {/* Outside the scroller and last in the tree, so it overlays the graph rather than
+          scrolling with it and needs no stacking context of its own. */}
+      {openSession !== null && (
+        <SessionModal
+          state={sessionDetail}
+          fallbackTitle={openSession.title}
+          now={now}
+          onClose={closeSession}
+        />
+      )}
 
       <footer className="footer">
         <span>read-only</span>

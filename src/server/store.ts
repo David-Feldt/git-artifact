@@ -8,7 +8,9 @@ import type {
   RepoInfo,
   ServerEvent,
   SessionBandInfo,
+  SessionDetail,
   SessionLiveness,
+  SessionPromptInfo,
   StatusPayload,
   WorktreeLane,
 } from '../api.js'
@@ -21,7 +23,12 @@ import { openRepo, refreshRepo, type Repo } from '../git/repo.js'
 import { readCommitDetail } from '../git/show.js'
 import { readStatus } from '../git/status.js'
 import { attributeCommits, buildBands } from '../sessions/attribute.js'
-import { readLiveSessions, readSessionsForRepo, type LiveSession } from '../sources/claude-code.js'
+import {
+  readLiveSessions,
+  readSessionsForRepo,
+  type LiveSession,
+  type SessionRecord,
+} from '../sources/claude-code.js'
 import { listCachedShaPrefixes } from '../artifacts/cache.js'
 
 /**
@@ -45,6 +52,62 @@ function sameOrder(a: readonly string[], b: readonly string[]): boolean {
  * row you just closed instant — not to hold history in memory.
  */
 const DETAIL_CACHE_MAX = 64
+
+/**
+ * Ceiling on the prompt text one session response carries.
+ *
+ * A prompt is whatever someone pasted into a terminal and has no natural bound — the
+ * largest single one measured on this repository is 83 KB, against 230 KB for every prompt
+ * of every session here combined. The budget is generous enough that a normal session is
+ * never touched and low enough that one pathological paste cannot hand the browser a
+ * payload it will stall rendering.
+ *
+ * Spent in order, so it is the newest prompts that survive intact. They are the ones being
+ * looked for.
+ */
+const PROMPT_BYTE_BUDGET = 256 * 1024
+
+/** Per-prompt cap, so one giant paste cannot consume the whole budget by itself. */
+const PROMPT_BYTE_CAP = 16 * 1024
+
+/**
+ * Project a parsed transcript onto the wire, spending the byte budget newest-first.
+ *
+ * Truncation is by code unit against a byte budget, which only ever keeps *less* than the
+ * budget — the same conservative direction the patch reader takes, and for the same reason:
+ * an over-estimate is a smaller response, an under-estimate is an unbounded one.
+ */
+function toSessionDetail(session: SessionRecord, live: SessionLiveness | null): SessionDetail {
+  let remaining = PROMPT_BYTE_BUDGET
+  let clipped = false
+
+  // Newest first while spending, then restored to reading order below.
+  const prompts: SessionPromptInfo[] = []
+  for (let i = session.prompts.length - 1; i >= 0; i -= 1) {
+    const prompt = session.prompts[i]!
+    const allowance = Math.min(remaining, PROMPT_BYTE_CAP)
+    const text = prompt.text.length > allowance ? prompt.text.slice(0, allowance) : prompt.text
+    if (text.length < prompt.text.length) clipped = true
+    remaining = Math.max(0, remaining - text.length)
+    prompts.push({ at: prompt.at, text, durationMs: prompt.durationMs, clipped: text.length < prompt.text.length })
+  }
+  prompts.reverse()
+
+  return {
+    sessionId: session.sessionId,
+    title: session.title,
+    branches: session.branches,
+    startedAt: session.start,
+    endedAt: session.end,
+    workingMs: session.workingMs,
+    inputTokens: session.inputTokens,
+    outputTokens: session.outputTokens,
+    model: session.model,
+    prompts,
+    clipped,
+    live,
+  }
+}
 
 export interface StoreOptions {
   /** History cap. `git log --all` unbounded on a large repo hangs the first render. */
@@ -127,6 +190,40 @@ export class GraphStore extends EventEmitter {
       if (!oldest.done) this.detailCache.delete(oldest.value)
     }
     return detail
+  }
+
+  /**
+   * One session's prompts and timings, on demand.
+   *
+   * Pulled rather than pushed, like a commit patch and for the same reason — except that
+   * unlike a patch this one *is* volatile. A running session grows a prompt every time you
+   * type, so nothing here is cached: the transcript parse behind it is already memoised on
+   * size and mtime, which makes a dormant session's re-read a `stat` and leaves only the
+   * live session — the one whose file actually changed — to re-parse.
+   *
+   * That re-parse is the cost of this endpoint, and it is bounded by the transcript rather
+   * than by anything we control: the largest here is 11 MB. It is paid on a click, once,
+   * which is why this is a route of its own and not part of the refresh path.
+   *
+   * Tier B throughout. `null` for a session that no longer exists, a transcript that has
+   * been deleted, or a format we cannot read — the panel says it found nothing rather than
+   * raising a problem banner.
+   */
+  async getSessionDetail(sessionId: string): Promise<SessionDetail | null> {
+    const repo = this.repo
+    if (repo === null) return null
+
+    try {
+      const roots = [repo.root, ...repo.worktrees.filter((w) => !w.bare).map((w) => w.path)]
+      const sessions = await readSessionsForRepo(roots, { home: this.options.claudeHome })
+      const session = sessions.find((s) => s.sessionId === sessionId)
+      if (session === undefined) return null
+
+      const live = await readLiveSessions({ home: this.options.claudeHome })
+      return toSessionDetail(session, liveness(live.get(sessionId)))
+    } catch {
+      return null
+    }
   }
 
   /** Load everything once, so the first HTTP request is served from memory. */
