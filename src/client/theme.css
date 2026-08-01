@@ -240,55 +240,58 @@ body {
   }
 }
 
-/* ------------------------------------------------------------ worktree strip */
+/* -------------------------------------------------------------- worktree tabs */
 
-.wtstrip {
+/*
+ * Tabs, not the pill strip they replaced. The strip was an annotation over one shared
+ * graph; these each select a different render, so they need to look like a chooser with
+ * exactly one thing chosen. The selected tab loses its bottom border and sits on the
+ * paper below, which is the one visual idiom that reads as "this panel belongs to me".
+ */
+.vtabs {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 18px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--rule);
   background: color-mix(in srgb, var(--card) 55%, var(--paper));
   flex: none;
   overflow-x: auto;
 }
 
-.wtstrip__label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink-muted);
-  flex: none;
-}
-
-.wtchip {
+.vtab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font: inherit;
   font-size: 11.5px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--wt-color) 35%, transparent);
-  background: color-mix(in srgb, var(--wt-color) 8%, var(--card));
-  color: var(--ink);
+  padding: 7px 11px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom-color: transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--ink-secondary);
   cursor: pointer;
   white-space: nowrap;
   flex: none;
 }
 
-.wtchip:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--wt-color) 16%, var(--card));
-  border-color: var(--wt-color);
+.vtab:hover:not(.vtab--on) {
+  background: color-mix(in srgb, var(--wt-color) 10%, transparent);
+  color: var(--ink);
 }
 
-.wtchip:disabled {
-  cursor: default;
-  opacity: 0.6;
+.vtab--on {
+  background: var(--paper);
+  border-color: var(--rule);
+  border-bottom-color: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
 }
 
-/* Carries the lane's colour, which is what ties a chip to its rail. */
-.wtchip__swatch {
+/* Carries the lane's colour, which is what ties a tab to the rail its tip sits on. */
+.vtab__swatch {
   width: 8px;
   height: 8px;
   border-radius: 2px;
@@ -296,26 +299,51 @@ body {
   flex: none;
 }
 
-.wtchip__name {
+.vtab__name {
   font-family: var(--font-mono);
   font-size: 11px;
 }
 
-.wtchip__tag,
-.wtchip__off {
+/*
+ * What is checked out here, secondary to the worktree name beside it. Muted rather than
+ * smaller-and-dark, because it competes with the name for the same glance and the name is
+ * the one that identifies the tab.
+ *
+ * Truncated, uniquely among the tab's parts. The strip scrolls horizontally, so an
+ * untruncated `feature/some-long-description` would push later tabs off the edge — which
+ * is how a reader comes to believe the tabs they cannot see do not exist.
+ */
+.vtab__branch {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vtab__tag,
+.vtab__off {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--ink-muted);
 }
 
-.wtchip__dirty {
+.vtab__count {
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.vtab__dirty {
   font-size: 10.5px;
   color: var(--heat-4);
   font-weight: 600;
 }
 
-.wtchip__ab {
+.vtab__ab {
   font-size: 10.5px;
   color: var(--ink-secondary);
   font-variant-numeric: tabular-nums;
@@ -497,8 +525,8 @@ body {
   color: var(--lane-7);
 }
 
-/* Where a worktree chip just scrolled you. Fades on its own, so it marks the arrival
-   without leaving a permanent selection the user then has to dismiss. */
+/* The tip you landed on after switching worktree tabs. Fades on its own, so it marks the
+   arrival without leaving a permanent selection the user then has to dismiss. */
 .row--focus .card {
   background: var(--card);
   border-color: var(--rule-strong);
@@ -636,6 +664,18 @@ body {
   border: 1px solid var(--rule-strong);
   border-radius: 3px;
   padding: 0 4px;
+  flex: none;
+}
+
+/*
+ * Quieter than the branch chip beside it and borderless on purpose. It qualifies the
+ * count rather than adding a fact, so it should read as a footnote to the meta text, not
+ * as a second badge competing with it.
+ */
+.shead__elsewhere {
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
   flex: none;
 }
 

@@ -63,12 +63,16 @@ export interface PushMarker {
 /**
  * Which lane each worktree's HEAD currently sits in.
  *
- * Deliberately an annotation rather than a partition of the graph. Commits are shared
- * history — one commit is typically reachable from every worktree — so carving lanes into
- * per-worktree blocks would have to either duplicate commits or assign them arbitrarily.
- * What is genuinely per-worktree is the tip: its HEAD, branch, and uncommitted work. So
- * the UI labels the lane a worktree is sitting in and leaves the graph itself alone,
- * which also keeps lane indices stable the way phase 0 requires.
+ * An annotation rather than a partition, and the distinction survives the arrival of
+ * worktree tabs. Within a *single* render the graph genuinely cannot be carved up:
+ * commits are shared history — one commit is typically reachable from every worktree — so
+ * per-worktree lane blocks would have to either duplicate commits or assign them
+ * arbitrarily. What is unambiguous is the tip: its HEAD, branch, and uncommitted work.
+ *
+ * The client scopes by *filtering into a separate render* instead (`client/views.ts`),
+ * where shared history is simply drawn again in each tab and nothing has to be assigned
+ * to one owner. This payload stays whole and unpartitioned, which is what lets a tab be
+ * derived without a round trip and keeps lane indices stable the way phase 0 requires.
  */
 export interface WorktreeLane {
   path: string

@@ -7,7 +7,7 @@ import { ExportControls } from './components/ExportControls.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import { SessionHeader } from './components/SessionHeader.js'
-import { WorktreeStrip } from './components/WorktreeStrip.js'
+import { ViewTabs } from './components/ViewTabs.js'
 import {
   DETAIL_HEIGHT,
   GUTTER_PAD,
@@ -23,10 +23,12 @@ import {
 } from './components/layout.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
+import { ALL_VIEW, buildViews, selectView } from './views.js'
 
 export function App() {
   const { graph, status, problem, connection, fatal } = useGraphStream()
   const [selected, setSelected] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<string>(ALL_VIEW)
 
   // One clock for the whole render, ticking slowly. Every row would otherwise call
   // Date.now() independently and disagree, and a fast tick would rerender the tree for
@@ -37,9 +39,31 @@ export function App() {
     return () => window.clearInterval(id)
   }, [])
 
-  const rows = useMemo(
-    () => buildDisplayRows(graph?.rows ?? [], status?.worktrees ?? [], graph?.sessions ?? []),
+  /*
+   * The unified graph plus one scoped view per worktree, derived entirely on the client
+   * from the payload already in memory. Switching tabs therefore costs no round trip and
+   * cannot show something the graph disagrees with — see `views.ts`.
+   */
+  const views = useMemo(
+    () => (graph === null ? [] : buildViews(graph, status?.worktrees ?? [])),
     [graph, status],
+  )
+
+  /*
+   * Everything below reads `view.graph`, never the payload directly. A tab is a filtered,
+   * re-laned copy with the same shape, so the rails, the export and the session bands all
+   * work against it unchanged — which is what keeps the scoping in one file instead of
+   * spread through every consumer.
+   *
+   * `selectView` falls back to the unified view, so deleting the worktree you are looking
+   * at drops you back to "All" rather than to an empty graph.
+   */
+  const view = views.length === 0 ? null : selectView(views, activeView)
+  const vgraph = view?.graph ?? null
+
+  const rows = useMemo(
+    () => buildDisplayRows(vgraph?.rows ?? [], view?.statuses ?? [], vgraph?.sessions ?? []),
+    [vgraph, view],
   )
   /*
    * The open panel is tracked by sha, not by row index, and the index is re-derived on
@@ -111,20 +135,20 @@ export function App() {
    */
   const exportSession = useCallback(
     (session: SessionBandInfo) => {
-      if (graph === null) return
-      const span = sessionSpan(graph.rows, rows, session)
+      if (vgraph === null) return
+      const span = sessionSpan(vgraph.rows, rows, session)
       if (span === null) return
       try {
         setExportError(null)
         downloadSvg(
-          { graph, rows: sliceRows(rows, span.first, span.last), now },
+          { graph: vgraph, rows: sliceRows(rows, span.first, span.last), now },
           { scopeLabel: session.title ?? 'Untitled session' },
         )
       } catch (err) {
         setExportError(err instanceof Error ? err.message : 'The export failed.')
       }
     },
-    [graph, rows, now],
+    [vgraph, rows, now],
   )
 
   useEffect(() => {
@@ -144,25 +168,24 @@ export function App() {
   const [focusedSha, setFocusedSha] = useState<string | null>(null)
 
   /**
-   * Scroll a worktree's HEAD into view.
+   * Switch tabs.
    *
-   * Positions come from the shared offsets array rather than from measuring the DOM, so
-   * this stays correct while the list is still rendering — and, unlike multiplying an
-   * index, it stays correct when a session header or an open panel sits above the target.
+   * The strip this replaced scrolled you to a tip buried in the middle of a graph holding
+   * every other checkout. A scoped view puts that tip at the top by construction, so there
+   * is nothing to hunt for — the scroll resets instead of animating, because the rows
+   * underneath have been replaced wholesale and smoothly travelling through the old
+   * view's geometry to reach the new view's offset would just be motion for its own sake.
+   *
+   * The tip still gets the focus flash, which is the one thing the strip did that is worth
+   * keeping: it answers "which of these commits is the one I switched to".
    */
-  const revealSha = useCallback(
-    (sha: string) => {
-      const index = rows.findIndex((r) => r.kind === 'commit' && r.row.commit.sha === sha)
-      if (index === -1) return
-      setFocusedSha(sha)
-      scrollRef.current?.scrollTo({
-        // Bias upward so the target lands a third of the way down rather than at the very
-        // top, where its surrounding history would be cut off.
-        top: Math.max(0, rowTop(offsets, index) - (scrollRef.current.clientHeight ?? 0) / 3),
-        behavior: 'smooth',
-      })
+  const selectViewKey = useCallback(
+    (key: string) => {
+      setActiveView(key)
+      scrollRef.current?.scrollTo({ top: 0 })
+      setFocusedSha(views.find((v) => v.key === key)?.worktree?.head ?? null)
     },
-    [rows, offsets],
+    [views],
   )
 
   if (fatal) {
@@ -185,22 +208,24 @@ export function App() {
         )}
         {graph?.repo.state.detachedHead && <span className="header__branch">detached HEAD</span>}
         <span className="header__spacer" />
-        {graph && (
+        {/* Counts and exports follow the tab: reporting the whole repository's total above
+            a graph showing one worktree's slice of it would be describing something the
+            reader cannot see. */}
+        {vgraph && (
           <span className="header__meta">
-            {graph.rows.length} commit{graph.rows.length === 1 ? '' : 's'}
+            {vgraph.rows.length} commit{vgraph.rows.length === 1 ? '' : 's'}
           </span>
         )}
-        {graph && <ExportControls graph={graph} rows={rows} now={now} />}
+        {vgraph && <ExportControls graph={vgraph} rows={rows} now={now} />}
         <ConnectionBadge connection={connection} />
       </header>
 
-      {graph && (
-        <WorktreeStrip
-          lanes={graph.worktreeLanes}
-          statuses={status?.worktrees ?? []}
-          onSelect={revealSha}
-        />
-      )}
+      <ViewTabs
+        views={views}
+        active={view?.key ?? ALL_VIEW}
+        statuses={status?.worktrees ?? []}
+        onSelect={selectViewKey}
+      />
 
       <div className="banners">
         {graph && <StateBanners repo={graph.repo} capped={graph.capped} maxCount={graph.maxCount} />}
@@ -223,28 +248,28 @@ export function App() {
       </div>
 
       <div className="scroll" ref={scrollRef}>
-        {graph === null ? (
+        {vgraph === null ? (
           <div className="empty">
             <div className="empty__title">Reading the repository…</div>
           </div>
         ) : rows.length === 0 ? (
-          <EmptyState repo={graph.repo} />
+          <EmptyState repo={vgraph.repo} scoped={view?.worktree != null} />
         ) : (
           <div className="graph">
             <div className="graph__body" style={{ height: bodyHeight(offsets) }}>
-              <Rails rows={rows} width={graph.width} expandedIndex={expanded?.index ?? null} />
+              <Rails rows={rows} width={vgraph.width} expandedIndex={expanded?.index ?? null} />
               {/* The extent rails sit behind the cards but above the graph, in the right
                   margin — the quietest part of a row, holding only a timestamp. Positions
                   come from the same offsets the rails use, so a band stretches correctly
                   when a detail panel opens inside it. */}
-              {graph.sessions.map((session) => {
+              {vgraph.sessions.map((session) => {
                 const first = rows.findIndex(
                   (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
                 )
                 const last = rows.findIndex(
                   (r) =>
                     r.kind === 'commit' &&
-                    r.row.commit.sha === graph.rows[session.endRow]?.commit.sha,
+                    r.row.commit.sha === vgraph.rows[session.endRow]?.commit.sha,
                 )
                 if (first === -1 || last === -1) return null
                 const top = rowTop(offsets, first)
@@ -272,14 +297,14 @@ export function App() {
                   style={{
                     top: rowTop(offsets, row.index),
                     height: rowHeight(row),
-                    paddingLeft: gutterWidth(graph.width) - GUTTER_PAD / 2,
+                    paddingLeft: gutterWidth(vgraph.width) - GUTTER_PAD / 2,
                   }}
                 >
                   {row.kind === 'commit' ? (
                     <CommitCard
                       row={row.row}
                       now={now}
-                      pushes={graph.pushes[row.row.commit.sha]}
+                      pushes={vgraph.pushes[row.row.commit.sha]}
                       expanded={expanded?.sha === row.row.commit.sha}
                       onToggle={() =>
                         setSelected((current) =>
@@ -303,7 +328,7 @@ export function App() {
                   style={{
                     top: detailTop(rows, offsets, expanded.index),
                     height: DETAIL_HEIGHT,
-                    left: gutterWidth(graph.width) - GUTTER_PAD / 2,
+                    left: gutterWidth(vgraph.width) - GUTTER_PAD / 2,
                   }}
                 >
                   <CommitDetailPanel
@@ -317,9 +342,9 @@ export function App() {
                 </div>
               )}
             </div>
-            {graph.capped && (
+            {vgraph.capped && (
               <p className="empty">
-                Showing the most recent {graph.maxCount} commits. Restart with
+                Showing the most recent {vgraph.maxCount} commits. Restart with
                 {' '}<code>--max-count</code> to load more.
               </p>
             )}
@@ -401,7 +426,25 @@ function StateBanners({
   )
 }
 
-function EmptyState({ repo }: { repo: RepoInfo }) {
+function EmptyState({ repo, scoped = false }: { repo: RepoInfo; scoped?: boolean }) {
+  /*
+   * A worktree tab can be empty while the repository is not, which the repo-level copy
+   * below would explain incorrectly — it would blame `--since` for a window that is
+   * actually fine. This happens when the tip sits outside the loaded set, so its ancestry
+   * resolves to nothing.
+   */
+  if (scoped) {
+    return (
+      <div className="empty">
+        <div className="empty__title">Nothing loaded for this worktree</div>
+        <p>
+          Its HEAD is outside the current window, so none of its history has been read.
+          Other tabs are unaffected — try <code>--max-count</code> or a looser
+          {' '}<code>--since</code>.
+        </p>
+      </div>
+    )
+  }
   if (repo.state.empty) {
     return (
       <div className="empty">
