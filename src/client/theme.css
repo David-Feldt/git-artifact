@@ -594,11 +594,20 @@ body {
   padding-right: 16px;
 }
 
+/*
+ * Stroked, not filled, and `--ink-secondary` rather than the band's own colour: the icon
+ * is a marker for where a band starts, so it should carry no more weight than the rule
+ * that closes the row. `color` is what it is set on, not `stroke`, because the paths use
+ * `currentColor` — which keeps this one declaration in charge of the whole icon.
+ *
+ * `export/svg.ts` draws the same geometry at the same size. Changing either belongs with
+ * a matching change there.
+ */
 .shead__mark {
-  width: 4px;
-  height: 15px;
-  border-radius: 2px;
-  background: var(--ink-secondary);
+  display: block;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-secondary);
   flex: none;
 }
 
@@ -819,6 +828,34 @@ body {
 
 .detail__spacer {
   flex: 1;
+}
+
+/*
+ * Takes the lane's own colour, like everything else in this panel. Generating a page
+ * spends tokens, so it reads as a deliberate action rather than another quiet affordance —
+ * but it still sits inside an opened commit, not on every row.
+ */
+.detail__explain {
+  font: inherit;
+  font-size: 11.5px;
+  flex: none;
+  color: var(--detail-accent);
+  background: color-mix(in srgb, var(--detail-accent) 8%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--detail-accent) 35%, transparent);
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.detail__explain:hover {
+  background: color-mix(in srgb, var(--detail-accent) 16%, var(--card));
+  border-color: var(--detail-accent);
+}
+
+.detail__explain:focus-visible {
+  outline: 2px solid var(--detail-accent);
+  outline-offset: 2px;
 }
 
 .detail__stat {

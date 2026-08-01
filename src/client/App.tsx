@@ -78,6 +78,30 @@ export function App() {
   const [exportError, setExportError] = useState<string | null>(null)
 
   /**
+   * Open a commit's generated page in its own window.
+   *
+   * `window.open` and nothing else, deliberately. A popup opened after an `await` has lost
+   * the user gesture that permits it and is blocked, so the window is opened immediately
+   * and the daemon serves it a shell that starts the work and polls itself.
+   *
+   * Named per sha, so asking twice focuses the window already open on that commit rather
+   * than stacking a second one over it.
+   */
+  const explain = useCallback((sha: string) => {
+    const opened = window.open(
+      `/artifact?sha=${encodeURIComponent(sha)}`,
+      `git-artifact-${sha}`,
+      'popup,width=940,height=900,noopener=no',
+    )
+    setExportError(
+      opened === null
+        ? 'Your browser blocked the popup. Allow popups for this page and try again.'
+        : null,
+    )
+    opened?.focus()
+  }, [])
+
+  /**
    * Save one band's commits, rather than the whole graph.
    *
    * A session-sized excerpt is a few hundred pixels tall where a full history runs to
@@ -288,6 +312,7 @@ export function App() {
                     error={detail.error}
                     lane={expanded.lane}
                     onClose={close}
+                    onExplain={() => explain(expanded.sha)}
                   />
                 </div>
               )}

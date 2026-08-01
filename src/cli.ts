@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import process from 'node:process'
+import { ArtifactService } from './artifacts/service.js'
 import { NotARepoError, openRepo } from './git/repo.js'
 import { generateToken } from './server/auth.js'
 import { startDaemon } from './server/index.js'
@@ -22,6 +23,8 @@ interface Args {
   open: boolean
   help: boolean
   version: boolean
+  harness: 'claude' | 'codex'
+  model?: string
 }
 
 function parseArgs(argv: string[]): Args {
@@ -32,6 +35,7 @@ function parseArgs(argv: string[]): Args {
     open: true,
     help: false,
     version: false,
+    harness: 'claude',
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -68,6 +72,17 @@ function parseArgs(argv: string[]): Args {
       case '--no-open':
         args.open = false
         break
+      case '--harness': {
+        const value = next()
+        if (value !== 'claude' && value !== 'codex') {
+          throw new Error(`--harness must be claude or codex, not ${value}`)
+        }
+        args.harness = value
+        break
+      }
+      case '--model':
+        args.model = next()
+        break
       default:
         // A bare path is a convenience for `git-artifact ~/some/repo`.
         if (!arg.startsWith('-')) args.repo = arg
@@ -97,11 +112,17 @@ Options
       --max-count <n>   Maximum commits to load (default: ${DEFAULT_MAX_COUNT})
       --since <date>    Only load commits newer than this, e.g. 3.months
       --no-open         Do not open a browser
+      --harness <name>  CLI used to write artifact pages: claude or codex (default: claude)
+      --model <name>    Model passed to that CLI
   -h, --help            Show this message
   -v, --version         Show the version
 
 git-artifact never writes to the repository. It reads the commit graph and the working
 tree, and it sends no telemetry anywhere.
+
+Explaining a commit runs your local Claude or Codex CLI, which sends that commit's diff to
+the model — per click, never in the background. Pages are cached under
+~/.cache/git-artifact/.
 `.trim()
 
 async function main(): Promise<void> {
@@ -145,6 +166,7 @@ async function main(): Promise<void> {
   const devOrigin = process.env.GIT_ARTIFACT_DEV_ORIGIN
   const daemon = await startDaemon({
     store,
+    artifacts: new ArtifactService(store, { harness: args.harness, model: args.model }),
     token,
     port: args.port,
     extraOrigins: devOrigin ? [devOrigin] : undefined,

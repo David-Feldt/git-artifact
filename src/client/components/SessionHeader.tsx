@@ -1,5 +1,6 @@
 import type { SessionBandInfo } from '../../api.js'
 import { formatTokens } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
 
 interface SessionHeaderProps {
   session: SessionBandInfo
@@ -23,7 +24,24 @@ export function SessionHeader({ session, onExport }: SessionHeaderProps) {
 
   return (
     <div className="shead" title={sessionTooltip(session)}>
-      <span className="shead__mark" aria-hidden="true" />
+      {/*
+       * Hidden from the accessibility tree: the title beside it already says what the row
+       * is, so announcing an icon here would only repeat it.
+       */}
+      <svg
+        className="shead__mark"
+        viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={ICON_STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {MONITOR_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
       <span className="shead__title">{session.title ?? 'Untitled session'}</span>
       <span className="shead__meta">
         {session.commitCount} commit{session.commitCount === 1 ? '' : 's'}

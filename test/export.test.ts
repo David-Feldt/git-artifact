@@ -7,6 +7,7 @@ import type { GraphPayload, SessionBandInfo, WorktreeStatus } from '../src/api.j
 import { buildDisplayRows, sessionSpan, sliceRows } from '../src/client/components/layout.js'
 import { HEAT_HEX, LANE_HEX, PAPER, laneHex, mix } from '../src/client/export/palette.js'
 import { exportFilename } from '../src/client/export/download.js'
+import { ICON_VIEWBOX, MONITOR_PATHS } from '../src/client/icons.js'
 import { fit, renderGraphSvg, type Font, type Measure } from '../src/client/export/svg.js'
 
 /**
@@ -152,6 +153,33 @@ describe('renderGraphSvg', () => {
     // the file is read with none of the UI around it to qualify the claim.
     expect(svg).toContain('observed alongside')
     expect(svg).not.toContain('authored by them.</text>'.replace('them.', 'these'))
+  })
+
+  it('opens a band with the same icon geometry the DOM draws', () => {
+    /*
+     * The export re-draws every row by hand, so nothing but this stops the icon in a saved
+     * file drifting from the one on screen once someone edits `icons.ts`. Asserting the
+     * path data rather than "an icon is present" is the whole point.
+     */
+    const session: SessionBandInfo = {
+      sessionId: 's1',
+      title: 'Understand background changes',
+      startRow: 0,
+      endRow: 0,
+      commitCount: 1,
+      promptCount: 3,
+      inputTokens: 1000,
+      outputTokens: 100,
+      model: 'claude',
+      startedAt: Date.UTC(2026, 7, 1, 10, 0),
+      endedAt: Date.UTC(2026, 7, 1, 11, 0),
+      branches: ['main'],
+    }
+    const svg = render(payload([c('a1', 'first')], { sessions: [session] }))
+
+    for (const d of MONITOR_PATHS) expect(svg).toContain(`<path d="${d}"/>`)
+    // Scaled into the 14px box `.shead__mark` declares, not left at the 24-unit viewbox.
+    expect(svg).toContain(`scale(${Math.round((14 / ICON_VIEWBOX) * 100) / 100})`)
   })
 
   it('keeps every line of text inside the document', () => {

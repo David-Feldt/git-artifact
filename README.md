@@ -42,15 +42,25 @@ a worktree, never commits, never moves a ref. It runs read commands with
 `GIT_OPTIONAL_LOCKS=0`, so it will not take `index.lock` and cannot contend with the git
 you are running in your terminal.
 
-There are no mutating HTTP endpoints. Anything other than `GET` is refused outright.
+One endpoint accepts a write, and only one: `POST /api/artifact`, which generates an
+explanation page. Everything else refuses anything but `GET`. That endpoint still cannot
+touch your repository — it spends tokens and writes a file under `~/.cache/git-artifact/`,
+outside the repo and outside any other tool's configuration.
 
-It also does not write to `~/.claude/settings.json`, install hooks, or modify any other
-tool's configuration. The only thing it writes is its own build output.
+It does not write to `~/.claude/settings.json`, install hooks, or modify any other tool's
+configuration.
 
 ## No telemetry
 
-None. No analytics, no crash reporting, no version check, no outbound network requests of
-any kind. The daemon binds to `127.0.0.1` and talks to nothing but your browser.
+None. No analytics, no crash reporting, no version check. The daemon binds to `127.0.0.1`
+and opens no sockets of its own.
+
+There is exactly one way anything leaves your machine, and you have to click it. Asking for
+an explanation of a commit runs your local `claude` or `codex` CLI as a subprocess, which
+sends that commit's diff to the model. Per click, never in the background, and never for a
+commit you did not ask about. The daemon holds no API key and makes no network request
+itself — whichever harness you have already installed and authenticated is the one that
+runs.
 
 ## Security
 
@@ -82,6 +92,8 @@ git-artifact [path] [options]
       --max-count <n>   Maximum commits to load (default: 5000)
       --since <date>    Only load commits newer than this, e.g. 3.months
       --no-open         Do not open a browser
+      --harness <name>  CLI that writes explanation pages: claude or codex (default: claude)
+      --model <name>    Model passed to that CLI
   -h, --help
   -v, --version
 ```
@@ -189,6 +201,69 @@ place in a pull request and one they scroll past.
 An excerpt says so rather than leaving it to be noticed: the session title takes the place
 of the branch chip in the header, and the commit count is the excerpt's own, not the
 repository's.
+
+## Explaining a commit
+
+Open a commit and press **Explain this commit**. A window opens, and a page appears in it
+that says what changed, why it matters, and what to review first.
+
+The page is **written by Claude, not rendered by git-artifact**. This project's job is the
+brief: the diff, the session the commit was observed alongside, when it was pushed, where it
+sits in the graph. That last part is what makes the brief worth more than `git show` —
+`git show` can tell a model five files changed together, and cannot tell it what someone was
+trying to do.
+
+A popup rather than a panel because these are pages you keep open, put on another monitor,
+and compare. The window is named after the commit, so asking twice focuses the one already
+open instead of stacking a second.
+
+### The budget, which is the whole difficulty
+
+Putting the diff in the prompt is the obvious plan and it fails. Measured across the 196
+non-merge commits of the largest repository on this machine, the median diff is **237
+tokens** and the largest is **21.3 million**. Every commit in *this* repository sits between
+1.8k and 21k, which is exactly why the problem is invisible from inside it.
+
+Dropping binary files is the obvious fix and is not sufficient — the second-worst commit
+measured contains **no binary files at all**, just one 135,037-line text STEP file that git
+diffs happily.
+
+So diffs are admitted **smallest first**. `git show` fills its byte ceiling positionally, so
+one generated file early in a commit consumes everything and every file after it arrives
+empty; admitting smallest-first spends the budget on the twenty ordinary source files
+instead of the one CAD export. Above a per-file ceiling a diff is cut short rather than
+allowed to own the budget.
+
+One invariant holds throughout:
+
+> **The file list is never truncated. Only diff bodies are.**
+
+A page can always say correctly which files changed and by how much. When bodies are
+dropped, the brief says so and the page is told to say so too — silently describing only the
+files that happened to fit would be wrong in a way nobody could see.
+
+### What it will not claim
+
+The page is told, in the same words used everywhere else here, that a session is **observed
+alongside** a commit and never its author; that it must not invent tickets, discussions or
+intentions the brief does not contain; that a merge diff is against the first parent; and
+that only the repository *name* may appear, never a path.
+
+Those constraints live in `src/artifacts/page-spec.ts`, which is a plain file you can read
+and change.
+
+### Cost and caching
+
+Generation takes on the order of a minute or two and spends real tokens, so a page is
+written once and reused. The cache key is the **brief**, not the sha: a commit is immutable
+but its brief is not — session attribution shifts when a transcript is written later, and a
+push marker appears when the work leaves the machine. Keying on the sha alone would serve a
+stale page that no longer matches the graph beside it.
+
+**There is no oracle here.** Lane assignment could be checked against `git log --graph`,
+which is why the graph is confidently correct. Nothing checks an explanation. A model can be
+fluently wrong about a diff, and this tool cannot tell. Read them as a well-informed
+first pass, not as ground truth.
 
 ## How liveness works
 

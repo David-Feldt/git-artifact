@@ -12,6 +12,7 @@ import {
 } from '../components/layout.js'
 import { railNodes, railPaths } from '../components/rail-paths.js'
 import { basename, formatTokens, heatBucket, relativeTime } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
 import {
   CARD,
   INK,
@@ -109,6 +110,8 @@ const GAP = 8
 const MIN_REF_WIDTH = 34
 /** Shortest run of session-header rule worth drawing, reserved before the meta is fitted. */
 const MIN_RULE = 40
+/** Side of the icon opening a session band. Matches `.shead__mark` in `theme.css`. */
+const MARK_SIZE = 14
 /**
  * Slack on chip text, absorbing the gap between the font measured and the font drawn.
  *
@@ -493,11 +496,9 @@ function renderSessionRow(
 
   // No lane hue and no warm tint: hue means lane identity and value belongs to activity
   // heat, so a band gets weight and position only.
-  out.push(
-    `<rect x="${round(left)}" y="${round(mid - 7.5)}" width="3" height="15" rx="1.5" fill="${INK_SECONDARY}"/>`,
-  )
+  out.push(icon(MONITOR_PATHS, left, mid - MARK_SIZE / 2, MARK_SIZE, INK_SECONDARY))
 
-  let x = left + 9
+  let x = left + MARK_SIZE + GAP
   const title = fit(session.title ?? 'Untitled session', 320, FONT.sessionTitle, measure)
   out.push(text(x, mid, title.text, FONT.sessionTitle, INK))
   x += measure(title.text, FONT.sessionTitle) + GAP
@@ -598,6 +599,24 @@ function text(
     `<text x="${round(x)}" y="${round(centerY + font.size * 0.355)}" ` +
     `font-family="${escapeXml(family)}" font-size="${font.size}"${weight}${align} ` +
     `fill="${fill}">${escapeXml(content)}</text>`
+  )
+}
+
+/**
+ * Draw icon paths from `icons.ts` at `size`, with (x, y) as the top-left of the box.
+ *
+ * The stroke is scaled along with the geometry rather than being pinned to a pixel width,
+ * so the result is identical to the browser scaling the same viewbox into a CSS box —
+ * which is the whole point of the two renderers sharing the path data.
+ */
+function icon(paths: readonly string[], x: number, y: number, size: number, stroke: string): string {
+  const scale = size / ICON_VIEWBOX
+  return (
+    `<g transform="translate(${round(x)} ${round(y)}) scale(${round(scale)})" ` +
+    `fill="none" stroke="${stroke}" stroke-width="${ICON_STROKE}" ` +
+    `stroke-linecap="round" stroke-linejoin="round">` +
+    paths.map((d) => `<path d="${d}"/>`).join('') +
+    `</g>`
   )
 }
 
