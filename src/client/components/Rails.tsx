@@ -1,10 +1,12 @@
 import { Fragment } from 'react'
 import type { DisplayRow } from './layout.js'
-import { LANE_WIDTH, ROW_HEIGHT, gutterWidth, laneColor, laneX, rowY } from './layout.js'
+import { LANE_WIDTH, ROW_HEIGHT, bodyHeight, gutterWidth, laneColor, laneX, rowY } from './layout.js'
 
 interface RailsProps {
   rows: DisplayRow[]
   width: number
+  /** Row with its detail panel open, whose rails must stretch across the gap. Or null. */
+  expandedIndex: number | null
 }
 
 /**
@@ -15,8 +17,8 @@ interface RailsProps {
  * cannot draw. Keeping them in separate layers means each does what it is good at, and
  * the fixed row height keeps the two in lockstep.
  */
-export function Rails({ rows, width }: RailsProps) {
-  const height = rows.length * ROW_HEIGHT
+export function Rails({ rows, width, expandedIndex }: RailsProps) {
+  const height = bodyHeight(rows.length, expandedIndex)
 
   return (
     <svg
@@ -27,18 +29,18 @@ export function Rails({ rows, width }: RailsProps) {
       aria-hidden="true"
     >
       {rows.map((row, index) => (
-        <Fragment key={index}>{renderEdges(row, rows[index + 1])}</Fragment>
+        <Fragment key={index}>{renderEdges(row, rows[index + 1], expandedIndex)}</Fragment>
       ))}
       {rows.map((row, index) => (
-        <Fragment key={`n${index}`}>{renderNode(row)}</Fragment>
+        <Fragment key={`n${index}`}>{renderNode(row, expandedIndex)}</Fragment>
       ))}
     </svg>
   )
 }
 
-function renderEdges(row: DisplayRow, next: DisplayRow | undefined) {
-  const y1 = rowY(row.index)
-  const y2 = rowY(row.index + 1)
+function renderEdges(row: DisplayRow, next: DisplayRow | undefined, expandedIndex: number | null) {
+  const y1 = rowY(row.index, expandedIndex)
+  const y2 = rowY(row.index + 1, expandedIndex)
 
   // A WIP row has no commit edges of its own. Every lane alive around it passes straight
   // through, and its own lane runs down into the commit it is sitting on.
@@ -116,8 +118,8 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1} ${y1 + bend} ${x2} ${y2 - bend} ${x2} ${y2}`
 }
 
-function renderNode(row: DisplayRow) {
-  const y = rowY(row.index)
+function renderNode(row: DisplayRow, expandedIndex: number | null) {
+  const y = rowY(row.index, expandedIndex)
 
   if (row.kind === 'wip') {
     // Hollow and dashed: not a commit, and not pretending to be one.

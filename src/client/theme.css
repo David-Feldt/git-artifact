@@ -63,6 +63,22 @@
 
   --danger: #b3261e;
 
+  /*
+   * Diff add/delete. The one place in this theme where hue carries meaning, and the
+   * least safe place to let it: red/green is the exact pair deuteranopia and protanopia
+   * collapse. It is used anyway because it is the convention every diff a developer has
+   * ever read uses, and inventing a private one would be worse — but it never carries the
+   * meaning alone. Every line keeps a literal `+`/`-` in a column of its own, and the two
+   * tints differ in lightness as well as hue, so the distinction survives greyscale.
+   *
+   * Inks are darker than the tints they sit on to clear 4.5:1 for the line text.
+   */
+  --diff-add-bg: #dfeddc;
+  --diff-add-ink: #1d6b2a;
+  --diff-del-bg: #f6dedc;
+  --diff-del-ink: #a3261e;
+  --diff-gutter: #efe7da;
+
   --row-height: 44px;
   --lane-width: 22px;
   --gutter-pad: 14px;
@@ -285,6 +301,8 @@ body {
 
 /* --------------------------------------------------------------------- card */
 
+/* A real <button>, so the native chrome has to be cleared before the card styling lands.
+   `text-align` and `font` are the two that browsers set on buttons and nothing else. */
 .card {
   display: flex;
   align-items: center;
@@ -294,11 +312,27 @@ body {
   padding: 5px 10px;
   border-radius: 7px;
   border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .row:hover .card {
   background: var(--card);
   border-color: var(--rule);
+  box-shadow: var(--shadow-card);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--lane-1);
+  outline-offset: 1px;
+}
+
+.card--expanded {
+  background: var(--card);
+  border-color: var(--rule-strong);
   box-shadow: var(--shadow-card);
 }
 
@@ -435,6 +469,298 @@ body {
   color: var(--ink-muted);
   align-self: center;
   flex: none;
+}
+
+/* ----------------------------------------------------- expanded commit panel */
+
+/*
+ * The slot is the gap the rows opened up; the panel fills it exactly. Its height is fixed
+ * (see DETAIL_HEIGHT) because the rails are drawn from the same arithmetic and cannot wait
+ * for a layout pass — so overflow is handled by scrolling inside, never by growing.
+ */
+.detail-slot {
+  position: absolute;
+  right: 0;
+  padding: 2px 0 8px;
+}
+
+.detail {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  /* The lane's own colour, so the panel is visibly attached to the rail it opened from. */
+  border-left: 3px solid var(--detail-accent);
+  border-radius: 7px;
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+}
+
+.detail__close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-muted);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.detail__close:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.detail__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 40px 5px 12px;
+  flex: none;
+}
+
+.detail__sha {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  flex: none;
+}
+
+.detail__author {
+  font-size: 12px;
+  color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail__email,
+.detail__date {
+  color: var(--ink-muted);
+  font-size: 11.5px;
+}
+
+.detail__spacer {
+  flex: 1;
+}
+
+.detail__stat {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail__files {
+  color: var(--ink-secondary);
+}
+
+.detail__add {
+  color: var(--diff-add-ink);
+}
+
+.detail__del {
+  color: var(--diff-del-ink);
+}
+
+.detail__submeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 12px 8px;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--rule);
+  flex: none;
+}
+
+.detail__submeta code {
+  font-family: var(--font-mono);
+  margin-right: 4px;
+}
+
+.detail__scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 12px 12px;
+}
+
+.detail__subject {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.detail__body {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detail__notice {
+  padding: 14px 12px;
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.detail__notice--error {
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------ file and hunks */
+
+.file {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.file__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+}
+
+.file__status {
+  flex: none;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-secondary);
+}
+
+.file__status--added {
+  color: var(--diff-add-ink);
+}
+
+.file__status--deleted {
+  color: var(--diff-del-ink);
+}
+
+.file__path {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* Only the directories shrink; the filename always survives. See PathLabel. */
+.file__dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-secondary);
+}
+
+.file__base {
+  flex: none;
+}
+
+.file__old {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-muted);
+}
+
+.file__counts {
+  display: flex;
+  gap: 7px;
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.file__note {
+  padding: 7px 10px;
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+}
+
+.hunk {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.hunk__header {
+  padding: 3px 10px;
+  color: var(--ink-muted);
+  background: var(--diff-gutter);
+  border-top: 1px solid var(--rule);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dline {
+  display: flex;
+  white-space: pre;
+}
+
+.dline__no {
+  flex: none;
+  width: 42px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--ink-muted);
+  background: var(--diff-gutter);
+  font-variant-numeric: tabular-nums;
+  user-select: none; /* Keep line numbers out of a copied selection. */
+}
+
+.dline__mark {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.dline__text {
+  flex: 1;
+  min-width: 0;
+  padding-right: 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dline--add {
+  background: var(--diff-add-bg);
+}
+
+.dline--add .dline__mark {
+  color: var(--diff-add-ink);
+}
+
+.dline--del {
+  background: var(--diff-del-bg);
+}
+
+.dline--del .dline__mark {
+  color: var(--diff-del-ink);
+}
+
+.dline--meta {
+  color: var(--ink-muted);
+  font-style: italic;
 }
 
 /* ----------------------------------------------------------------- messages */

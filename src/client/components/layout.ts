@@ -17,8 +17,41 @@ export function laneX(lane: number): number {
   return GUTTER_PAD + lane * LANE_WIDTH + LANE_WIDTH / 2
 }
 
-export function rowY(index: number): number {
-  return index * ROW_HEIGHT + ROW_HEIGHT / 2
+/**
+ * Height of the expanded commit panel.
+ *
+ * A constant, and scrolled internally, rather than sized to its content. The rails are an
+ * SVG drawn from row indices and the cards are HTML positioned from the same arithmetic;
+ * a content-sized panel could only be known after the browser had laid it out, so the SVG
+ * would have to be drawn a frame late and every rail below the panel would visibly snap
+ * into place. Trading an exact fit for geometry both layers can compute up front is what
+ * keeps them locked together.
+ */
+export const DETAIL_HEIGHT = 340
+
+/**
+ * Top edge of a row, in pixels, accounting for an open detail panel above it.
+ *
+ * `expandedIndex` is the row whose panel is open, or null. Only one opens at a time, so
+ * the shift is a single constant rather than a running sum.
+ */
+export function rowTop(index: number, expandedIndex: number | null = null): number {
+  const shifted = expandedIndex !== null && index > expandedIndex
+  return index * ROW_HEIGHT + (shifted ? DETAIL_HEIGHT : 0)
+}
+
+/** Vertical centre of a row: where its node sits and its rails meet. */
+export function rowY(index: number, expandedIndex: number | null = null): number {
+  return rowTop(index, expandedIndex) + ROW_HEIGHT / 2
+}
+
+/** Top edge of the panel itself, which occupies the gap opened under its row. */
+export function detailTop(expandedIndex: number): number {
+  return rowTop(expandedIndex) + ROW_HEIGHT
+}
+
+export function bodyHeight(rowCount: number, expandedIndex: number | null = null): number {
+  return rowCount * ROW_HEIGHT + (expandedIndex === null ? 0 : DETAIL_HEIGHT)
 }
 
 export function gutterWidth(width: number): number {

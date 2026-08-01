@@ -68,6 +68,78 @@ export interface StatusPayload {
   generatedAt: number
 }
 
+/** One line inside a hunk. `meta` carries git's own annotations, e.g. "\ No newline". */
+export interface DiffLine {
+  kind: 'context' | 'add' | 'del' | 'meta'
+  /** Line number in the pre-image, or null on an added line. */
+  oldLine: number | null
+  /** Line number in the post-image, or null on a removed line. */
+  newLine: number | null
+  /** The line without its leading marker character. */
+  text: string
+}
+
+export interface DiffHunk {
+  /** The `@@ … @@` line verbatim, including any function-context suffix git found. */
+  header: string
+  lines: DiffLine[]
+}
+
+export interface DiffFile {
+  path: string
+  /** Pre-rename path, set only when `status` is `renamed`. */
+  oldPath: string | null
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechanged' | 'unknown'
+  /** Null on a binary file, where git counts no lines. */
+  additions: number | null
+  deletions: number | null
+  binary: boolean
+  hunks: DiffHunk[]
+  /**
+   * The file is listed with its counts but carries no hunks, because the commit's patch
+   * ran past the byte budget before reaching it. Distinguishing this from "no changes"
+   * matters: a silently empty diff reads as a bug.
+   */
+  clipped: boolean
+}
+
+/**
+ * A single commit with its patch, fetched on demand when a row is expanded.
+ *
+ * Not part of {@link GraphPayload}: patches are orders of magnitude larger than the graph
+ * and are wanted for one commit at a time, so shipping them with every refresh would cost
+ * the live update path everything it saves by being incremental.
+ */
+export interface CommitDetail {
+  sha: string
+  parents: string[]
+  authorName: string
+  authorEmail: string
+  authorDate: number
+  committerName: string
+  committerEmail: string
+  commitDate: number
+  subject: string
+  /** Message after the subject, empty when there is none. */
+  body: string
+  /**
+   * No `refs` field, deliberately. Every other field here is fixed by the sha and so is
+   * safe to cache forever, but decorations move whenever a branch does — caching them
+   * would make the cache lie. The card the panel opens under already renders them.
+   */
+  files: DiffFile[]
+  additions: number
+  deletions: number
+  /**
+   * This commit is a merge, so the diff shown is against the first parent only.
+   * The combined diff git shows by default lists just the conflict resolutions, which on
+   * a clean merge is nothing at all — accurate, and useless as an answer to "what landed".
+   */
+  mergeFirstParent: boolean
+  /** True when the patch was cut short by the byte budget; see {@link DiffFile.clipped}. */
+  clipped: boolean
+}
+
 /** A recoverable problem the daemon wants to show in the UI rather than swallow. */
 export interface ProblemPayload {
   message: string

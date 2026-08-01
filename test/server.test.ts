@@ -42,6 +42,39 @@ describe('daemon', () => {
     expect((await res.json()).worktrees).toHaveLength(1)
   })
 
+  it('serves one commit with its patch', async () => {
+    const head = (await (await get(`/api/graph?t=${token}`)).json()).rows[0].commit.sha
+    const res = await get(`/api/commit?sha=${head}&t=${token}`)
+    expect(res.status).toBe(200)
+
+    const body = await res.json()
+    expect(body.sha).toBe(head)
+    expect(body.subject).toBe('merge feature')
+    expect(body.files.length).toBeGreaterThan(0)
+    // Volatile by nature, so it is deliberately absent and the response stays cacheable
+    // by sha for the lifetime of the daemon.
+    expect(body.refs).toBeUndefined()
+  })
+
+  it('refuses a sha-shaped argument that is really a revision expression', async () => {
+    // `execFile` stops shell injection, but git would still happily resolve any of these,
+    // and `?sha=HEAD` quietly returning a different commit each time is its own bug.
+    for (const sha of ['HEAD', 'main', 'HEAD@{0}', '', '--output=/tmp/x']) {
+      const res = await get(`/api/commit?sha=${encodeURIComponent(sha)}&t=${token}`)
+      expect(res.status).toBe(400)
+    }
+  })
+
+  it('reports an unknown commit as missing rather than failing', async () => {
+    const res = await get(`/api/commit?sha=${'dead'.repeat(10)}&t=${token}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('requires authorisation for a commit patch too', async () => {
+    // The patch endpoint returns source code, so it is the last place to forget this.
+    expect((await get(`/api/commit?sha=${'0'.repeat(40)}`)).status).toBe(401)
+  })
+
   it('never caches repository data', async () => {
     const res = await get(`/api/graph?t=${token}`)
     expect(res.headers.get('cache-control')).toBe('no-store')

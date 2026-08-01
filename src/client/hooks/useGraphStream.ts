@@ -13,7 +13,7 @@ export interface StreamState {
 }
 
 /** The token is handed to the page in the URL the CLI printed. */
-function readToken(): string {
+export function readToken(): string {
   return new URLSearchParams(window.location.search).get('t') ?? ''
 }
 

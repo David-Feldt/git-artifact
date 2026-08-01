@@ -215,6 +215,41 @@ export const builders: Record<string, () => string> = {
     return dir
   },
 
+  /**
+   * One commit carrying every diff shape the patch reader has to survive: a rename with
+   * edits at both ends (so it has two hunks, not one), a binary file, a delete, an add,
+   * and a path containing a space, a quote and a dollar sign.
+   *
+   * Not in {@link GRAPH_FIXTURES} — its graph is a plain two-commit line and holds nothing
+   * for the lane oracle. What it exercises is `git/show.ts`.
+   */
+  patches() {
+    const dir = initRepo('patches')
+    const lines = (n: number) =>
+      `${Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n')}\n`
+
+    writeFileSync(path.join(dir, 'poem.txt'), lines(20))
+    writeFileSync(path.join(dir, 'logo.bin'), Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe]))
+    writeFileSync(path.join(dir, "odd name'$.txt"), 'odd\n')
+    run(dir, ['add', '-A'], (tick += 60))
+    run(dir, ['commit', '--quiet', '-m', 'seed'], tick)
+
+    tick += 60
+    run(dir, ['mv', 'poem.txt', 'verse.txt'], tick)
+    // Changing the first and last lines of twenty leaves a gap wider than the context
+    // window, so git emits two hunks and the header parser gets exercised twice.
+    writeFileSync(
+      path.join(dir, 'verse.txt'),
+      lines(20).replace('line 1\n', 'line one\n').replace('line 20\n', 'line twenty\n'),
+    )
+    writeFileSync(path.join(dir, 'logo.bin'), Buffer.from([0x00, 0x09, 0xfe, 0xff]))
+    writeFileSync(path.join(dir, 'added.txt'), 'brand new\n')
+    run(dir, ['rm', '--quiet', "odd name'$.txt"], tick)
+    run(dir, ['add', '-A'], tick)
+    run(dir, ['commit', '--quiet', '-m', 'reshape'], tick)
+    return dir
+  },
+
   /** A second linked worktree, for the WIP-node and lane-group work. */
   worktrees() {
     const dir = initRepo('worktrees')

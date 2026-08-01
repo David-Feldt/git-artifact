@@ -11,6 +11,7 @@ import {
   AUTH_FAILURE_STATUS,
   type AuthConfig,
 } from './auth.js'
+import { isValidSha, UnknownCommitError } from '../git/show.js'
 import type { GraphStore } from './store.js'
 
 /** Loopback only. There is no configuration to change this, deliberately. */
@@ -106,12 +107,41 @@ export async function startDaemon(options: DaemonOptions): Promise<Daemon> {
       case '/api/status':
         sendJson(res, 200, store.getStatus() ?? { error: 'not ready' })
         return
+      case '/api/commit':
+        await sendCommitDetail(url, res)
+        return
       case '/api/events':
         openEventStream(req, res)
         return
       default:
         if (serveClient) await serveStatic(url.pathname, res)
         else sendJson(res, 404, { error: 'not found' })
+    }
+  }
+
+  /**
+   * One commit's metadata and patch, for an expanded row.
+   *
+   * The sha is validated before it reaches git. `execFile` already makes shell injection
+   * impossible, but an unvalidated string is still a *revision*, and things like
+   * `HEAD@{now}` or a path would be honoured — so the shape is checked here and the
+   * revision is pinned to `^{commit}` in the reader.
+   */
+  async function sendCommitDetail(url: URL, res: ServerResponse): Promise<void> {
+    const sha = url.searchParams.get('sha') ?? ''
+    if (!isValidSha(sha)) {
+      sendJson(res, 400, { error: 'A commit sha is required.' })
+      return
+    }
+
+    try {
+      sendJson(res, 200, await store.getCommitDetail(sha))
+    } catch (err) {
+      if (err instanceof UnknownCommitError) {
+        sendJson(res, 404, { error: 'No such commit in this repository.' })
+        return
+      }
+      throw err
     }
   }
 

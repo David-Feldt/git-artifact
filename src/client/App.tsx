@@ -1,18 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { RepoInfo } from '../api.js'
 import { CommitCard } from './components/CommitCard.js'
+import { CommitDetailPanel } from './components/CommitDetail.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import {
+  DETAIL_HEIGHT,
   GUTTER_PAD,
-  ROW_HEIGHT,
+  bodyHeight,
   buildDisplayRows,
+  detailTop,
   gutterWidth,
+  rowTop,
 } from './components/layout.js'
+import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
 
 export function App() {
   const { graph, status, problem, connection, fatal } = useGraphStream()
+  const [selected, setSelected] = useState<string | null>(null)
 
   // One clock for the whole render, ticking slowly. Every row would otherwise call
   // Date.now() independently and disagree, and a fast tick would rerender the tree for
@@ -27,6 +33,35 @@ export function App() {
     () => buildDisplayRows(graph?.rows ?? [], status?.worktrees ?? []),
     [graph, status],
   )
+
+  /*
+   * The open panel is tracked by sha, not by row index, and the index is re-derived on
+   * every render. Rows move under you constantly here — a commit, a rebase, or a WIP node
+   * appearing all reindex the list — and an index would silently come to mean a different
+   * commit. A sha that is no longer in the graph resolves to no row, which closes the
+   * panel on its own.
+   */
+  const expanded = useMemo(() => {
+    if (selected === null) return null
+    const index = rows.findIndex(
+      (row) => row.kind === 'commit' && row.row.commit.sha === selected,
+    )
+    const row = index === -1 ? undefined : rows[index]
+    return row?.kind === 'commit' ? { index, lane: row.row.lane, sha: selected } : null
+  }, [rows, selected])
+
+  const detail = useCommitDetail(expanded?.sha ?? null)
+
+  const close = useCallback(() => setSelected(null), [])
+
+  useEffect(() => {
+    if (expanded === null) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [expanded, close])
 
   useEffect(() => {
     document.title = graph ? `${graph.repo.name} · git-artifact` : 'git-artifact'
@@ -86,25 +121,52 @@ export function App() {
           <div className="graph">
             <div
               className="graph__body"
-              style={{ height: rows.length * ROW_HEIGHT }}
+              style={{ height: bodyHeight(rows.length, expanded?.index ?? null) }}
             >
-              <Rails rows={rows} width={graph.width} />
+              <Rails rows={rows} width={graph.width} expandedIndex={expanded?.index ?? null} />
               {rows.map((row) => (
                 <div
                   key={row.kind === 'commit' ? row.row.commit.sha : `wip:${row.worktree.path}`}
                   className={row.kind === 'wip' ? 'row wip' : 'row'}
                   style={{
-                    top: row.index * ROW_HEIGHT,
+                    top: rowTop(row.index, expanded?.index ?? null),
                     paddingLeft: gutterWidth(graph.width) - GUTTER_PAD / 2,
                   }}
                 >
                   {row.kind === 'commit' ? (
-                    <CommitCard row={row.row} now={now} />
+                    <CommitCard
+                      row={row.row}
+                      now={now}
+                      expanded={expanded?.sha === row.row.commit.sha}
+                      onToggle={() =>
+                        setSelected((current) =>
+                          current === row.row.commit.sha ? null : row.row.commit.sha,
+                        )
+                      }
+                    />
                   ) : (
                     <WipNode worktree={row.worktree} />
                   )}
                 </div>
               ))}
+              {expanded !== null && (
+                <div
+                  className="detail-slot"
+                  style={{
+                    top: detailTop(expanded.index),
+                    height: DETAIL_HEIGHT,
+                    left: gutterWidth(graph.width) - GUTTER_PAD / 2,
+                  }}
+                >
+                  <CommitDetailPanel
+                    detail={detail.detail}
+                    loading={detail.loading}
+                    error={detail.error}
+                    lane={expanded.lane}
+                    onClose={close}
+                  />
+                </div>
+              )}
             </div>
             {graph.capped && (
               <p className="empty">

@@ -1,11 +1,25 @@
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
-import type { GraphPayload, ProblemPayload, RepoInfo, ServerEvent, StatusPayload } from '../api.js'
+import type {
+  CommitDetail,
+  GraphPayload,
+  ProblemPayload,
+  RepoInfo,
+  ServerEvent,
+  StatusPayload,
+} from '../api.js'
 import { assignLanes, graphWidth } from '../graph/lanes.js'
 import { gitOrNull } from '../git/exec.js'
 import { readLog } from '../git/log.js'
 import { openRepo, refreshRepo, type Repo } from '../git/repo.js'
+import { readCommitDetail } from '../git/show.js'
 import { readStatus } from '../git/status.js'
+
+/**
+ * How many commit patches to keep. Small, because the point is only to make re-opening a
+ * row you just closed instant — not to hold history in memory.
+ */
+const DETAIL_CACHE_MAX = 64
 
 export interface StoreOptions {
   /** History cap. `git log --all` unbounded on a large repo hangs the first render. */
@@ -30,6 +44,7 @@ export class GraphStore extends EventEmitter {
   private status: StatusPayload | null = null
   private repo: Repo | null = null
   private remotes: string[] = []
+  private readonly detailCache = new Map<string, CommitDetail>()
 
   private graphRunning = false
   private graphQueued = false
@@ -53,6 +68,30 @@ export class GraphStore extends EventEmitter {
 
   getRepo(): Repo | null {
     return this.repo
+  }
+
+  /**
+   * Read one commit's patch, memoised.
+   *
+   * Everything {@link CommitDetail} carries is determined by the sha — that is what a sha
+   * means — so an entry can never go stale and no invalidation hook is needed. Insertion
+   * order doubles as the LRU: re-reading moves the key to the end.
+   */
+  async getCommitDetail(sha: string): Promise<CommitDetail> {
+    const cached = this.detailCache.get(sha)
+    if (cached !== undefined) {
+      this.detailCache.delete(sha)
+      this.detailCache.set(sha, cached)
+      return cached
+    }
+
+    const detail = await readCommitDetail(this.repoPath, sha)
+    this.detailCache.set(sha, detail)
+    if (this.detailCache.size > DETAIL_CACHE_MAX) {
+      const oldest = this.detailCache.keys().next()
+      if (!oldest.done) this.detailCache.delete(oldest.value)
+    }
+    return detail
   }
 
   /** Load everything once, so the first HTTP request is served from memory. */
