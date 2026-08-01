@@ -4,6 +4,24 @@
   "description": "Live commit-graph dashboard for your repo. Local-first, read-only, no telemetry.",
   "type": "module",
   "license": "MIT",
+  "author": "David Feldt <dsfeldt@gmail.com>",
+  "homepage": "https://github.com/David-Feldt/git-artifact#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/David-Feldt/git-artifact.git"
+  },
+  "bugs": {
+    "url": "https://github.com/David-Feldt/git-artifact/issues"
+  },
+  "keywords": [
+    "git",
+    "commit-graph",
+    "dashboard",
+    "worktree",
+    "local-first",
+    "cli",
+    "claude-code"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -16,6 +34,7 @@
   ],
   "scripts": {
     "build": "npm run build:server && npm run build:client",
+    "prepublishOnly": "npm run build",
     "build:server": "node scripts/build-server.mjs",
     "build:client": "vite build",
     "dev": "node scripts/dev.mjs",

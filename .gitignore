@@ -1,4 +1,6 @@
 node_modules/
 dist/
+# Local Claude Code state, including linked worktrees checked out under .claude/worktrees.
+.claude/
 .DS_Store
 *.log

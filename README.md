@@ -5,16 +5,32 @@ monitor, and it keeps itself up to date while you work — commits appear as you
 and uncommitted edits show up as a work-in-progress node with the files you are actively
 touching highlighted.
 
+## Install
+
+From inside any repository:
+
 ```sh
 npx git-artifact
 ```
 
 That is the whole setup. No global install, no config file, no account.
 
-Because the binary is named `git-artifact`, git also picks it up as a subcommand:
+Install it properly and git picks it up as a subcommand, because the binary is named
+`git-artifact`:
 
 ```sh
+npm install -g git-artifact
 git artifact
+```
+
+To run it from a clone instead:
+
+```sh
+git clone https://github.com/David-Feldt/git-artifact
+cd git-artifact
+npm install
+npm run build
+node dist/cli.js -C /path/to/your/repo
 ```
 
 ---
