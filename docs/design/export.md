@@ -1,4 +1,10 @@
-# Export
+# Export — removed
+
+**This feature no longer exists.** SVG and PNG export of the commit graph shipped, and was
+removed when it turned out not to be wanted; session-scoped export went earlier, with the
+attribution it depended on. The document is kept because the reasoning in it is still worth
+having — particularly what measurement changed, and the correction recorded below about what
+"artifact" was supposed to mean.
 
 Design for phase 5: turning the live view into a file you can keep, paste into a pull
 request, or hand to someone who does not have the daemon running.

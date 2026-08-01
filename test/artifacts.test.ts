@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
 import type { CommitDetail, DiffFile, SessionBandInfo } from '../src/api.js'
 import { buildBrief, DEFAULT_BUDGET, type Budget } from '../src/artifacts/bundle.js'
-import { artifactKey } from '../src/artifacts/cache.js'
+import { artifactKey, cachePath, listCachedShaPrefixes } from '../src/artifacts/cache.js'
 import { extractFragment, HarnessError, sanitiseFragment } from '../src/artifacts/harness.js'
 
 /**
@@ -293,5 +296,61 @@ describe('artifactKey', () => {
   it('is stable for the same inputs', () => {
     const sha = 'a'.repeat(40)
     expect(artifactKey(sha, 'same')).toBe(artifactKey(sha, 'same'))
+  })
+})
+
+describe('listCachedShaPrefixes', () => {
+  /**
+   * What the graph's artifact marks are built from.
+   *
+   * Deliberately the weaker question — "has a page ever been written for this commit" —
+   * because the exact one needs each commit's brief, and a brief costs a `git show`. These
+   * pin that weaker contract so nobody later "fixes" it into something that reads the whole
+   * history's diffs to colour an icon.
+   */
+  const caches: string[] = []
+  afterAll(() => {
+    for (const dir of caches) rmSync(dir, { recursive: true, force: true })
+  })
+
+  /** Write page files straight into the cache layout for a fake repo root. */
+  function seed(names: string[]): string {
+    const home = mkdtempSync(path.join(tmpdir(), 'ga-cache-home-'))
+    caches.push(home)
+    const root = path.join(home, 'repo')
+    mkdirSync(root, { recursive: true })
+    for (const name of names) {
+      const target = cachePath(root, name.replace(/\.html$/, ''))
+      mkdirSync(path.dirname(target), { recursive: true })
+      writeFileSync(target, '<p>page</p>')
+    }
+    return root
+  }
+
+  it('reports the sha prefix of every page on disk', async () => {
+    const root = seed(['abc123abc123-deadbeefcafe', '0f0f0f0f0f0f-0123456789ab'])
+    expect(await listCachedShaPrefixes(root)).toEqual(
+      new Set(['abc123abc123', '0f0f0f0f0f0f']),
+    )
+  })
+
+  it('reports a commit whose brief has moved on, rather than hiding it', async () => {
+    // Two pages for one commit: an older brief and the current one. The mark means "there
+    // is something here to read", so the commit counts once and following it regenerates.
+    const root = seed(['abc123abc123-1111aaaa2222', 'abc123abc123-3333bbbb4444'])
+    expect(await listCachedShaPrefixes(root)).toEqual(new Set(['abc123abc123']))
+  })
+
+  it('returns nothing when no page has ever been generated', async () => {
+    // No cache directory at all. The common case on a fresh machine, and not an error.
+    const home = mkdtempSync(path.join(tmpdir(), 'ga-cache-home-'))
+    caches.push(home)
+    expect(await listCachedShaPrefixes(path.join(home, 'never-used'))).toEqual(new Set())
+  })
+
+  it('ignores anything that is not a generated page', async () => {
+    const root = seed(['abc123abc123-deadbeefcafe'])
+    writeFileSync(path.join(path.dirname(cachePath(root, 'x-y')), 'notes.txt'), 'scratch')
+    expect(await listCachedShaPrefixes(root)).toEqual(new Set(['abc123abc123']))
   })
 })

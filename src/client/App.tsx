@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RepoInfo } from '../api.js'
-import { downloadSvg } from './export/download.js'
 import { CommitCard } from './components/CommitCard.js'
 import { CommitDetailPanel } from './components/CommitDetail.js'
-import { ExportControls } from './components/ExportControls.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import { SessionStrip } from './components/SessionStrip.js'
@@ -18,7 +16,6 @@ import {
   rowHeight,
   rowOffsets,
   rowTop,
-  sliceRows,
 } from './components/layout.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
@@ -102,7 +99,6 @@ export function App() {
 
   const close = useCallback(() => setSelected(null), [])
 
-  const [exportError, setExportError] = useState<string | null>(null)
 
   /**
    * Where a commit's generated page lives.
@@ -117,6 +113,14 @@ export function App() {
    * otherwise end up in a bookmark or pasted into a chat.
    */
   const artifactHref = (sha: string) => `/artifact?sha=${encodeURIComponent(sha)}`
+
+  /*
+   * Which commits already have a page, as a set so the rows do not each scan a list.
+   *
+   * Read off `graph`, not `vgraph`: a worktree tab filters which commits are shown, and
+   * whether a page exists on disk is a fact about the commit rather than about the view.
+   */
+  const generated = useMemo(() => new Set(graph?.artifacts ?? []), [graph])
 
 
   useEffect(() => {
@@ -184,7 +188,6 @@ export function App() {
             {vgraph.rows.length} commit{vgraph.rows.length === 1 ? '' : 's'}
           </span>
         )}
-        {vgraph && <ExportControls graph={vgraph} rows={rows} now={now} />}
         <ConnectionBadge connection={connection} />
       </header>
 
@@ -211,11 +214,6 @@ export function App() {
         {connection === 'down' && (
           <div className="banner banner--error">
             <span>Lost contact with the git-artifact daemon. Reconnecting…</span>
-          </div>
-        )}
-        {exportError && (
-          <div className="banner banner--error">
-            <span>{exportError}</span>
           </div>
         )}
       </div>
@@ -254,6 +252,7 @@ export function App() {
                       pushes={vgraph.pushes[row.row.commit.sha]}
                       expanded={expanded?.sha === row.row.commit.sha}
                       artifactHref={artifactHref(row.row.commit.sha)}
+                      artifactReady={generated.has(row.row.commit.sha)}
                       onToggle={() =>
                         setSelected((current) =>
                           current === row.row.commit.sha ? null : row.row.commit.sha,

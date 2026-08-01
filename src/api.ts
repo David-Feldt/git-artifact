@@ -165,6 +165,15 @@ export interface GraphPayload {
   pushes: Record<string, PushMarker[]>
   /** Tip annotations, one per live worktree. See {@link WorktreeLane}. */
   worktreeLanes: WorktreeLane[]
+  /**
+   * Shas that already have a generated page on disk.
+   *
+   * Answers "is there something here to read", not "is it still current" — the second needs
+   * each commit's brief, which costs a `git show` apiece. A page whose brief has since moved
+   * is still listed, and following it regenerates. Empty on any failure, like every other
+   * Tier B field: an unmarked icon is unremarkable, and the click still works.
+   */
+  artifacts: string[]
   /** Widest row, i.e. how many lane columns the renderer must reserve. */
   width: number
   /** True when history was cut short by the `--max-count` cap rather than exhausted. */

@@ -130,23 +130,27 @@ different question, already answered per-branch by the ahead/behind counts on ea
 Reflogs expire — 90 days for reachable entries by default — so older history simply has no
 markers. That is normal, not an error.
 
-## Session bands
+## Sessions
 
-If you use Claude Code, commits are grouped under the session they were made during, with
-its title, prompt count, and token cost. Token cost is the one figure git genuinely cannot
-produce.
+If you use Claude Code, the strip above the graph shows one card per session that worked in
+this repository — newest first, with its title, the branches it touched, how many prompts it
+took, and what it cost. Token cost is the one figure git genuinely cannot produce. A live
+session carries a dot and what it is doing right now.
 
-**These are observed alongside, not authored by.** Nothing in a transcript records that a
-session caused a commit — it is inferred from timing. A commit you type by hand shortly
-after Claude stops will land in the band. The wording throughout says "observed alongside"
-for exactly this reason.
+**Everything on a card is read from a transcript, not deduced.** Branch tags come from the
+`gitBranch` stamped on every record, so "this session worked on `export`" is a fact.
 
-Attribution gives each commit to the single session whose most recent activity precedes it
-most closely, ignoring any session idle more than 30 minutes. The naive alternative — a
-session owns every commit between its first and last record — produces nonsense, because
-sessions sit idle for days: measured on real data, one session left open 13.7 days
-swallowed every commit three other sessions made inside its window, stacking four bands on
-one row. Design notes and measurements are in
+Cards are deliberately **not** joined to the commits below them, and that is the main thing
+worth knowing. Sessions used to be drawn as bands claiming a contiguous run of commits, which
+required knowing which session produced which commit — and nothing records that. It was
+inferred from timing, which works until two sessions run at once, and then "whichever was
+active most recently" decides on a margin of milliseconds. Measured on this repository's own
+history, four pairs of sessions overlapped and commits landed under the wrong session.
+
+The band could not even represent the overlap when it guessed right: one commit gets exactly
+one owner, so concurrent work rendered as tidy sequential blocks. The picture came out
+cleaner than the truth — not visibly wrong, which is worse. So the claim was dropped rather
+than dressed up. Measurements and the reasoning that led here are in
 [`docs/design/session-bands.md`](docs/design/session-bands.md).
 
 Everything about Claude Code lives in `src/sources/claude-code.ts`. The transcript format
@@ -154,53 +158,6 @@ is not a stable public contract, so a format change is a one-file fix. If Claude
 absent, has no transcripts for this repository, or writes something unrecognised, the
 graph renders exactly as before with no session data and no error. Nothing else depends on
 it.
-
-## Export
-
-The **SVG** and **PNG** buttons in the header save the graph as it currently stands —
-rails, refs, push markers, session bands, and the WIP node, with the repository name and
-the moment it was taken.
-
-This does not weaken the guarantee above. There is no export endpoint and the daemon writes
-nothing; the file is built in the page and saved by the browser's own download path, the
-same as any other download.
-
-An exported file is **a different document from the dashboard**, not a screenshot of it.
-The dashboard is tuned for glancing at a second monitor while you work; the file is read
-later, by someone who was not there. So it shares geometry and palette with the live view
-and shares no components with it — the text layer on screen is HTML, which a standalone SVG
-cannot contain, so the exporter renders that text itself.
-
-Two consequences worth knowing:
-
-- **It is self-contained.** No stylesheet, no font file, no network. Every colour is
-  literal hex rather than a CSS custom property, because support for `var()` in standalone
-  SVG rasterisers ranges from partial to absent — an artifact that rendered perfectly in a
-  browser and lost every colour on the way to PNG would be worse than one that never
-  claimed to.
-- **Fonts get substituted.** Text is measured against your browser's resolved font, and a
-  converter without that family will pick another. Everything is anchored at one end and
-  truncated with a margin rather than fitted to the pixel, so substitution costs a little
-  slack, never overlapping text.
-
-Only the repository *name* goes in the file, never its path. The exported graph is the
-thing most likely to be forwarded to someone else.
-
-PNG is written at 2×, which is legible when a chat client scales it down.
-
-Session bands carry the "observed alongside, not authored by" wording into the file itself,
-where it is read without any of the surrounding UI to qualify it.
-
-### One session at a time
-
-Hovering a session band reveals an `export` button that saves just that band's commits. A
-five-commit band comes out around 330 px tall, where the full history of the same repository
-is 450 and a 227-commit one is 10,070 — the difference between an image someone reads in
-place in a pull request and one they scroll past.
-
-An excerpt says so rather than leaving it to be noticed: the session title takes the place
-of the branch chip in the header, and the commit count is the excerpt's own, not the
-repository's.
 
 ## Explaining a commit
 

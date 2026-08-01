@@ -15,6 +15,14 @@ interface CommitCardProps {
   onToggle: () => void
   /** Where this commit's generated page lives. Absent when generation is unavailable. */
   artifactHref?: string
+  /**
+   * Whether a page for this commit already exists on disk.
+   *
+   * Only ever "there is something to read", never "it is current" — see `GraphPayload`.
+   * The distinction is why the two states are two colours rather than a present/absent
+   * mark: both are live links, and one of them costs tokens to follow.
+   */
+  artifactReady?: boolean
 }
 
 export function CommitCard({
@@ -24,6 +32,7 @@ export function CommitCard({
   expanded,
   onToggle,
   artifactHref,
+  artifactReady = false,
 }: CommitCardProps) {
   const { commit } = row
   const isHead = commit.refs.some((ref) => ref.isHead)
@@ -72,21 +81,35 @@ export function CommitCard({
 
       {artifactHref !== undefined && (
         /*
-         * Icon only, revealed on hover or focus. This sits on every row now, and a labelled
-         * control repeated the whole way down would out-shout the commits it is attached to
-         * — the rails and the subjects are what the view is for.
+         * Icon only, and always visible. It was revealed on hover, which made the one thing
+         * worth knowing at a glance — which commits already have a page — impossible to see
+         * without moving the mouse down every row in turn. Standing weight is the cost of
+         * that; the icon is small, muted until you approach it, and carries no label.
+         *
+         * Two states, two colours, both of them links. Blue is "nothing here yet, following
+         * this spends tokens"; orange is "already written, following this is free". Present
+         * versus absent would have been the obvious encoding and is the wrong one — an
+         * absent mark reads as "you cannot do this here", when in fact that is the case
+         * where there is most to do.
          *
          * `target` is named per sha, so asking twice focuses the tab already open on that
          * commit rather than stacking a second. Deliberately no `rel="noopener"`: it forces
          * a fresh context and defeats that reuse, and this is our own page on our own origin.
          */
         <a
-          className="card__artifact"
+          className={`card__artifact ${artifactReady ? 'card__artifact--ready' : ''}`}
           href={artifactHref}
           target={`git-artifact-${commit.sha}`}
-          style={{ ['--artifact-accent' as string]: laneColor(row.lane) }}
-          title="Generate artifact — a page explaining this commit, in a new tab"
-          aria-label={`Generate artifact for commit ${commit.sha.slice(0, 7)}`}
+          title={
+            artifactReady
+              ? 'Read the page explaining this commit — already generated, opens in a new tab'
+              : 'Generate artifact — a page explaining this commit, in a new tab'
+          }
+          aria-label={
+            artifactReady
+              ? `Read the generated page for commit ${commit.sha.slice(0, 7)}`
+              : `Generate artifact for commit ${commit.sha.slice(0, 7)}`
+          }
         >
           <svg
             viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}

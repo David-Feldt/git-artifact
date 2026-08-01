@@ -4,13 +4,11 @@ import { LANE_WIDTH, ROW_HEIGHT, laneX } from './layout.js'
 /**
  * Rail geometry, as data.
  *
- * Split out of `Rails.tsx` because there are two renderers for the same graph: the live
- * SVG layer, which maps these to `<path>` elements with `var(--lane-n)` strokes, and the
- * exporter, which maps them to markup with literal hex. Computing the geometry twice would
- * guarantee the exported graph eventually stops matching the one on screen.
- *
- * Being free of React also makes the geometry directly testable, which it was not before —
- * `lanes.ts` is covered by the oracle suite, but nothing asserted the paths actually drawn.
+ * Split out of `Rails.tsx` originally so the SVG exporter could draw the same geometry as
+ * the live view. That exporter is gone, and this stays anyway: being free of React is what
+ * makes the geometry directly testable, which it was not before. `lanes.ts` is covered by
+ * the oracle suite, but until this moved out nothing asserted the paths actually drawn —
+ * including the merge-into-a-busy-lane case that needs two lines for one edge.
  */
 
 /** One rail stroke. `lane` selects the colour; the caller resolves it. */

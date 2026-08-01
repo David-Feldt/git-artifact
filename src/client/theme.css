@@ -76,6 +76,18 @@
   --live: #008300;
 
   /*
+   * The artifact mark's two states. Blue: no page yet, following it spends tokens. Orange:
+   * a page exists, following it is free.
+   *
+   * Their own tokens rather than `--lane-1` and `--heat-4`, for the reason `--live` has one.
+   * These marks sit in a column immediately beside the rails, so a lane hue here would read
+   * as lane identity; and the heat ramp means recency inside a WIP node, which is a
+   * different claim again. Both are stepped to clear 3:1 on this paper at 14px.
+   */
+  --artifact-idle: #2a78d6;
+  --artifact-ready: #c9761a;
+
+  /*
    * Diff add/delete. The one place in this theme where hue carries meaning, and the
    * least safe place to let it: red/green is the exact pair deuteranopia and protanopia
    * collapse. It is used anyway because it is the convention every diff a developer has
@@ -170,42 +182,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/*
- * Export. Quiet by default — this is a thing you reach for occasionally, and the header
- * belongs to the repository name and the live state, not to a toolbar.
- */
-.export {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
 
-.export__btn {
-  font: inherit;
-  font-size: 10.5px;
-  font-family: var(--font-mono);
-  color: var(--ink-secondary);
-  background: var(--card);
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
-  padding: 2px 7px;
-  cursor: pointer;
-}
 
-.export__btn:hover:not(:disabled) {
-  background: var(--card-hover);
-  color: var(--ink);
-}
 
-.export__btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 
-.export__error {
-  font-size: 11px;
-  color: var(--danger);
-}
 
 /* Connection state. Never let a dead daemon look like an idle one. */
 .conn {
@@ -1250,6 +1230,18 @@ body {
  * subjects and rails that the view exists to show. Takes the lane's colour, like everything
  * else that belongs to a particular commit.
  */
+/*
+ * The artifact mark, on every commit row and always visible.
+ *
+ * It used to appear on hover. That hid the one thing about it worth seeing at a glance —
+ * which commits already have a page — behind having to sweep the mouse down the column.
+ *
+ * Standing on every row is the price, so it is paid down elsewhere: no label, 14px of
+ * geometry, and a resting opacity below full. It reads as a column of small marks rather
+ * than a column of buttons, and only resolves into a control when you approach one.
+ *
+ * The accent is set per state below; this rule never picks a colour of its own.
+ */
 .card__artifact {
   display: inline-flex;
   align-items: center;
@@ -1259,10 +1251,10 @@ body {
   height: 24px;
   margin-right: 6px;
   border-radius: 5px;
-  color: var(--artifact-accent, var(--ink-muted));
+  color: var(--artifact-accent);
   border: 1px solid transparent;
-  opacity: 0;
-  transition: opacity 90ms ease-out;
+  opacity: 0.55;
+  transition: opacity 90ms ease-out, background 90ms ease-out, border-color 90ms ease-out;
 }
 
 .card__artifact svg {
@@ -1270,17 +1262,42 @@ body {
   height: 14px;
 }
 
-.row:hover .card__artifact,
-.card__artifact:focus-visible {
+/*
+ * Not generated: blue, the colour of a thing you may do. Following it spends tokens.
+ *
+ * Its own token rather than `--lane-1`, for the reason `--live` has one: a lane hue means
+ * lane identity everywhere else on this page, and these marks sit in a column right beside
+ * the rails where that reading is one glance away.
+ */
+.card__artifact {
+  --artifact-accent: var(--artifact-idle);
+}
+
+/*
+ * Generated: orange, and the warmer of the two on purpose. It is the state with something
+ * behind it, it is rarer than the other, and warm advances against this paper — so a page
+ * that exists is what your eye finds when scanning the column.
+ *
+ * Full opacity as well as a different hue, so the distinction survives greyscale and does
+ * not rest on colour alone.
+ */
+.card__artifact--ready {
+  --artifact-accent: var(--artifact-ready);
+  opacity: 1;
+}
+
+.row:hover .card__artifact {
   opacity: 1;
 }
 
 .card__artifact:hover {
+  opacity: 1;
   background: color-mix(in srgb, var(--artifact-accent) 12%, var(--card));
   border-color: color-mix(in srgb, var(--artifact-accent) 40%, transparent);
 }
 
 .card__artifact:focus-visible {
+  opacity: 1;
   outline: 2px solid var(--artifact-accent);
   outline-offset: 1px;
 }

@@ -22,6 +22,7 @@ import { readCommitDetail } from '../git/show.js'
 import { readStatus } from '../git/status.js'
 import { attributeCommits, buildBands } from '../sessions/attribute.js'
 import { readLiveSessions, readSessionsForRepo, type LiveSession } from '../sources/claude-code.js'
+import { listCachedShaPrefixes } from '../artifacts/cache.js'
 
 /**
  * Narrow a registry entry to what the wire carries.
@@ -32,6 +33,11 @@ import { readLiveSessions, readSessionsForRepo, type LiveSession } from '../sour
  */
 function liveness(entry: LiveSession | undefined): SessionLiveness | null {
   return entry === undefined ? null : { status: entry.status }
+}
+
+/** Both lists come from the same commit order, so position-wise equality is enough. */
+function sameOrder(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
 /**
@@ -181,6 +187,7 @@ export class GraphStore extends EventEmitter {
         pushes: await this.readPushes(repo),
         worktreeLanes: this.worktreeLanes(repo, rows),
         sessions: await this.readSessions(repo, commits),
+        artifacts: await this.readArtifacts(repo, commits),
         width: graphWidth(rows),
         // A full read returns exactly the cap when there is more history behind it.
         capped: commits.length >= this.options.maxCount,
@@ -351,6 +358,51 @@ export class GraphStore extends EventEmitter {
       this.emitEvent({ type: 'graph', data: this.graph })
     } catch {
       // Tier B. Bands keep whatever liveness they last had rather than losing the graph.
+    }
+  }
+
+  /**
+   * Which of the loaded commits already have a generated page.
+   *
+   * One directory listing, matched against the commits in hand. The cache stores 12-char sha
+   * prefixes, and this maps them back to full shas rather than making the client compare
+   * prefixes — a prefix is an implementation detail of the filename, and putting it on the
+   * wire would leak it into every consumer.
+   */
+  private async readArtifacts(repo: Repo, commits: Commit[]): Promise<string[]> {
+    try {
+      const prefixes = await listCachedShaPrefixes(repo.root)
+      if (prefixes.size === 0) return []
+      return commits.map((c) => c.sha).filter((sha) => prefixes.has(sha.slice(0, 12)))
+    } catch {
+      return [] // Tier B: no marks rather than no graph.
+    }
+  }
+
+  /**
+   * Re-read which commits have a page, and nothing else.
+   *
+   * Generating an artifact writes outside the repository, so nothing the watcher sees moves
+   * and the graph would otherwise keep saying "not generated" until the next commit. The
+   * service calls this when it finishes writing.
+   *
+   * Separate from the graph refresh for the same reason liveness is: this costs one readdir,
+   * where a full refresh re-runs `git log` and re-parses transcripts. Publishes only on an
+   * actual change, so a regeneration that overwrites an existing page stays silent.
+   */
+  async refreshArtifacts(): Promise<void> {
+    const graph = this.graph
+    if (graph === null || this.repo === null) return
+
+    try {
+      const commits = graph.rows.map((row) => row.commit)
+      const artifacts = await this.readArtifacts(this.repo, commits)
+      if (sameOrder(artifacts, graph.artifacts)) return
+
+      this.graph = { ...graph, artifacts }
+      this.emitEvent({ type: 'graph', data: this.graph })
+    } catch {
+      // Bands and marks keep whatever they had rather than costing the graph.
     }
   }
 

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -59,4 +59,32 @@ export async function writeCached(repoRoot: string, key: string, html: string): 
 /** Where a page for this key would live, whether or not it exists. For reporting. */
 export function cachePath(repoRoot: string, key: string): string {
   return fileFor(repoRoot, key)
+}
+
+/**
+ * Which commits have a page on disk, as the 12-character sha prefixes the keys start with.
+ *
+ * One `readdir`, deliberately. The exact question — "is the page for this commit still
+ * current" — needs the brief, and a brief costs a `git show` per commit; asking it for every
+ * row on every graph refresh would put the whole history's diffs in the update path to
+ * decide the colour of an icon.
+ *
+ * So this answers the weaker question: has a page ever been written for this commit. A brief
+ * that has since changed leaves the old page on disk and this still reports the commit as
+ * generated, which is the right way round — the mark means "there is something here to
+ * read", and following it regenerates against the current brief anyway.
+ */
+export async function listCachedShaPrefixes(repoRoot: string): Promise<Set<string>> {
+  const prefixes = new Set<string>()
+  try {
+    for (const name of await readdir(path.join(ROOT, repoSlug(repoRoot)))) {
+      if (!name.endsWith('.html')) continue
+      // `<sha12>-<briefDigest>.html`; everything before the first hyphen is the sha.
+      const prefix = name.slice(0, name.indexOf('-'))
+      if (prefix.length > 0) prefixes.add(prefix)
+    }
+  } catch {
+    // No cache directory yet. Nothing has been generated, which is not a failure.
+  }
+  return prefixes
 }

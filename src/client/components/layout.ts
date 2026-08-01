@@ -170,14 +170,3 @@ export function buildDisplayRows(
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
 
-/**
- * A contiguous run of rows, renumbered to stand alone.
- *
- * `index` is a row's position in the list it belongs to — the rails read `y(row.index)`
- * against an offsets array built from that same list. A raw `slice` keeps the original
- * numbers and every rail in the excerpt would be drawn against the wrong row, so the
- * renumbering here is what makes a scoped export possible at all.
- */
-export function sliceRows(rows: DisplayRow[], first: number, last: number): DisplayRow[] {
-  return rows.slice(first, last + 1).map((row, index) => ({ ...row, index }))
-}

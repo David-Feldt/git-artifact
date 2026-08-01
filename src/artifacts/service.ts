@@ -120,6 +120,19 @@ export class ArtifactService {
     })
 
     const path = await writeCached(repoRoot, key, html)
+
+    /*
+     * Tell the graph a page now exists for this commit.
+     *
+     * Nothing else would. The page is written outside the repository — deliberately, that is
+     * the "never writes to your repo" guarantee — so no watcher sees it and the icon would
+     * keep reading "not generated" until some unrelated commit forced a refresh.
+     *
+     * Not awaited, and failure ignored: the page is already written and the caller is owed
+     * its status. A missed repaint costs a mark that appears on the next refresh instead.
+     */
+    void this.store.refreshArtifacts().catch(() => {})
+
     return { state: 'ready', key, path }
   }
 
