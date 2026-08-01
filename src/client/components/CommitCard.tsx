@@ -2,6 +2,7 @@ import type { PushMarker } from '../../api.js'
 import type { RefDecoration } from '../../graph/model.js'
 import type { GraphRow } from '../../graph/model.js'
 import { laneColor } from './layout.js'
+import { relativeTime } from '../format.js'
 
 interface CommitCardProps {
   row: GraphRow
@@ -96,23 +97,3 @@ function Ref({ decoration, lane }: { decoration: RefDecoration; lane: number }) 
   )
 }
 
-/**
- * Compact relative time.
- *
- * Deliberately terse — this is meant to be read at a glance from across a desk, where
- * "2h" lands and "2 hours ago" is a sentence. Future timestamps are possible after a
- * rebase or with clock skew and are clamped rather than rendered as negative.
- */
-export function relativeTime(timestamp: number, now: number): string {
-  const seconds = Math.max(0, Math.round((now - timestamp) / 1000))
-  if (seconds < 45) return 'now'
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.round(hours / 24)
-  if (days < 30) return `${days}d`
-  const months = Math.round(days / 30)
-  if (months < 12) return `${months}mo`
-  return `${Math.round(months / 12)}y`
-}

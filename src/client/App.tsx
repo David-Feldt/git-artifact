@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RepoInfo } from '../api.js'
 import { CommitCard } from './components/CommitCard.js'
 import { CommitDetailPanel } from './components/CommitDetail.js'
+import { ExportControls } from './components/ExportControls.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import { SessionHeader } from './components/SessionHeader.js'
@@ -134,6 +135,7 @@ export function App() {
             {graph.rows.length} commit{graph.rows.length === 1 ? '' : 's'}
           </span>
         )}
+        {graph && <ExportControls graph={graph} rows={rows} now={now} />}
         <ConnectionBadge connection={connection} />
       </header>
 

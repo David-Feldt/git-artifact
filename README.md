@@ -143,6 +143,42 @@ absent, has no transcripts for this repository, or writes something unrecognised
 graph renders exactly as before with no session data and no error. Nothing else depends on
 it.
 
+## Export
+
+The **SVG** and **PNG** buttons in the header save the graph as it currently stands —
+rails, refs, push markers, session bands, and the WIP node, with the repository name and
+the moment it was taken.
+
+This does not weaken the guarantee above. There is no export endpoint and the daemon writes
+nothing; the file is built in the page and saved by the browser's own download path, the
+same as any other download.
+
+An exported file is **a different document from the dashboard**, not a screenshot of it.
+The dashboard is tuned for glancing at a second monitor while you work; the file is read
+later, by someone who was not there. So it shares geometry and palette with the live view
+and shares no components with it — the text layer on screen is HTML, which a standalone SVG
+cannot contain, so the exporter renders that text itself.
+
+Two consequences worth knowing:
+
+- **It is self-contained.** No stylesheet, no font file, no network. Every colour is
+  literal hex rather than a CSS custom property, because support for `var()` in standalone
+  SVG rasterisers ranges from partial to absent — an artifact that rendered perfectly in a
+  browser and lost every colour on the way to PNG would be worse than one that never
+  claimed to.
+- **Fonts get substituted.** Text is measured against your browser's resolved font, and a
+  converter without that family will pick another. Everything is anchored at one end and
+  truncated with a margin rather than fitted to the pixel, so substitution costs a little
+  slack, never overlapping text.
+
+Only the repository *name* goes in the file, never its path. The exported graph is the
+thing most likely to be forwarded to someone else.
+
+PNG is written at 2×, which is legible when a chat client scales it down.
+
+Session bands carry the "observed alongside, not authored by" wording into the file itself,
+where it is read without any of the surrounding UI to qualify it.
+
 ## How liveness works
 
 Filesystem events are a **trigger, not a source of truth**. A change under `.git` or in a

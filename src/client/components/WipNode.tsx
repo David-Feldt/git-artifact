@@ -1,4 +1,5 @@
 import type { DirtyFile, WorktreeStatus } from '../../api.js'
+import { basename, heatBucket } from '../format.js'
 
 /** How many file chips fit before the rest collapse into a count. */
 const VISIBLE_FILES = 5
@@ -49,24 +50,9 @@ function FileChip({ file }: { file: DirtyFile }) {
   )
 }
 
-/**
- * Map heat onto the sequential amber ramp.
- *
- * Stepped rather than interpolated: five discrete buckets read as distinct at a glance,
- * where a continuous gradient turns into mush at chip size. Thresholds are spaced by the
- * decay curve, so the top bucket means "within the last few minutes".
- */
+/** The ramp itself is `--heat-0` … `--heat-4`; the thresholds live in format.ts. */
 export function heatColor(heat: number): string {
-  if (heat >= 0.75) return 'var(--heat-4)'
-  if (heat >= 0.45) return 'var(--heat-3)'
-  if (heat >= 0.2) return 'var(--heat-2)'
-  if (heat >= 0.05) return 'var(--heat-1)'
-  return 'var(--heat-0)'
-}
-
-function basename(filePath: string): string {
-  const slash = filePath.lastIndexOf('/')
-  return slash === -1 ? filePath : filePath.slice(slash + 1)
+  return `var(--heat-${heatBucket(heat)})`
 }
 
 function describeStatus(file: DirtyFile): string {

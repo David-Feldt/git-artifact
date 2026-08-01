@@ -158,6 +158,43 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Export. Quiet by default — this is a thing you reach for occasionally, and the header
+ * belongs to the repository name and the live state, not to a toolbar.
+ */
+.export {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.export__btn {
+  font: inherit;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--ink-secondary);
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.export__btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  color: var(--ink);
+}
+
+.export__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.export__error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
 /* Connection state. Never let a dead daemon look like an idle one. */
 .conn {
   display: inline-flex;

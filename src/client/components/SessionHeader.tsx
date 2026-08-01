@@ -1,4 +1,5 @@
 import type { SessionBandInfo } from '../../api.js'
+import { formatTokens } from '../format.js'
 
 interface SessionHeaderProps {
   session: SessionBandInfo
@@ -51,15 +52,6 @@ function sessionTooltip(session: SessionBandInfo): string {
   return lines.join('\n')
 }
 
-/**
- * Token counts run to tens of millions once cache reads are included, so raw digits are
- * unreadable at a glance and the exact figure is never the point.
- */
-export function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M tok`
-  if (count >= 1_000) return `${Math.round(count / 1_000)}k tok`
-  return `${count} tok`
-}
 
 function duration(session: SessionBandInfo): string {
   const minutes = Math.round((session.endedAt - session.startedAt) / 60_000)
