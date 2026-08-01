@@ -1,5 +1,6 @@
 import type { CommitDetail, DiffFile, DiffHunk } from '../../api.js'
 import { laneColor } from './layout.js'
+import { CHART_NETWORK_PATHS, ICON_STROKE, ICON_VIEWBOX } from '../icons.js'
 
 /**
  * Ceiling on how many lines of one file's patch reach the DOM.
@@ -73,8 +74,26 @@ function Loaded({ detail, onExplain }: { detail: CommitDetail; onExplain?: () =>
            * button inside a button is invalid. It also reads better here — you open a
            * commit to look at it, and this is the thing to do next.
            */
-          <button className="detail__explain" onClick={onExplain} type="button">
-            Explain this commit
+          <button
+            className="detail__explain"
+            onClick={onExplain}
+            type="button"
+            title="Write a page explaining this commit"
+          >
+            <svg
+              viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={ICON_STROKE}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              {CHART_NETWORK_PATHS.map((d) => (
+                <path key={d} d={d} />
+              ))}
+            </svg>
+            Generate artifact
           </button>
         )}
         <DiffStat detail={detail} />

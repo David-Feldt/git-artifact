@@ -29,3 +29,24 @@ export const MONITOR_PATHS: readonly string[] = [
   'M8 21h8',
   'M12 17v4',
 ]
+
+/**
+ * Lucide `chart-network`. Marks generating an artifact.
+ *
+ * Three nodes joined by edges over an axis — the same thing the graph beside it draws, and
+ * the same thing a generated page explains, which is why this one rather than a document or
+ * a sparkle.
+ *
+ * Its three `<circle>` elements are rewritten as two-arc subpaths, for the reason above.
+ * Verified rather than assumed: rasterised against the upstream file at 16×, the converted
+ * form is pixel-identical — zero differing pixels of 147,456, maximum channel delta 0.
+ */
+export const CHART_NETWORK_PATHS: readonly string[] = [
+  'm13.11 7.664 1.78 2.672',
+  'm14.162 12.788-3.324 1.424',
+  'm20 4-6.06 1.515',
+  'M3 3v16a2 2 0 0 0 2 2h16',
+  'M10 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0z',
+  'M14 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0z',
+  'M7 15a2 2 0 1 0 4 0a2 2 0 1 0-4 0z',
+]

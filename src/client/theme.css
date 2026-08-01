@@ -836,6 +836,9 @@ body {
  * but it still sits inside an opened commit, not on every row.
  */
 .detail__explain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font: inherit;
   font-size: 11.5px;
   flex: none;
@@ -846,6 +849,13 @@ body {
   padding: 3px 10px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* Sized in em so the icon tracks the label if the type scale ever moves. */
+.detail__explain svg {
+  width: 1.2em;
+  height: 1.2em;
+  flex: none;
 }
 
 .detail__explain:hover {

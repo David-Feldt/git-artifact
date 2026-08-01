@@ -204,7 +204,7 @@ repository's.
 
 ## Explaining a commit
 
-Open a commit and press **Explain this commit**. A window opens, and a page appears in it
+Open a commit and press **Generate artifact**. A window opens, and a page appears in it
 that says what changed, why it matters, and what to review first.
 
 The page is **written by Claude, not rendered by git-artifact**. This project's job is the
