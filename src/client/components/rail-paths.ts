@@ -88,19 +88,6 @@ function rowPaths(row: DisplayRow, arriving: number[], y: CenterOf): RailPath[] 
   const y1 = y(row.index)
   const y2 = y(row.index + 1)
 
-  /*
-   * A session header carries no graph geometry of its own. Every rail that reached it runs
-   * straight through, exactly as it does past a WIP node — the header is an annotation
-   * sitting beside the graph, not a node in it.
-   */
-  if (row.kind === 'session') {
-    return arriving.map((lane) => ({
-      key: `${row.index}:s${lane}`,
-      d: straight(laneX(lane), y1, y2),
-      lane,
-      truncated: false,
-    }))
-  }
 
   // A WIP row has no commit edges of its own. Every rail that reached it passes straight
   // through, and its own lane runs down into the commit it is sitting on.
@@ -160,9 +147,6 @@ function rowPaths(row: DisplayRow, arriving: number[], y: CenterOf): RailPath[] 
 }
 
 function rowNode(row: DisplayRow, y: CenterOf): RailNode | null {
-  // A session header has no node — nothing on the graph happened at that row.
-  if (row.kind === 'session') return null
-
   if (row.kind === 'wip') {
     return { key: `n${row.index}`, lane: row.lane, y: y(row.index), kind: 'wip' }
   }

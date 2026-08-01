@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RepoInfo, SessionBandInfo } from '../api.js'
+import type { RepoInfo } from '../api.js'
 import { downloadSvg } from './export/download.js'
 import { CommitCard } from './components/CommitCard.js'
 import { CommitDetailPanel } from './components/CommitDetail.js'
 import { ExportControls } from './components/ExportControls.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
-import { SessionHeader } from './components/SessionHeader.js'
 import { SessionStrip } from './components/SessionStrip.js'
 import { ViewTabs } from './components/ViewTabs.js'
 import {
@@ -19,7 +18,6 @@ import {
   rowHeight,
   rowOffsets,
   rowTop,
-  sessionSpan,
   sliceRows,
 } from './components/layout.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
@@ -63,22 +61,11 @@ export function App() {
   const vgraph = view?.graph ?? null
 
   /*
-   * No sessions in the graph. They live in the strip above it now.
-   *
-   * A band claimed a contiguous run of commits, which required knowing which session
-   * produced which commit — and that is inferred from timing, so with two sessions running
-   * at once it is close to a coin flip. Worse, the band could not represent the overlap even
-   * when it guessed right: one commit gets exactly one owner, so concurrent work rendered as
-   * tidy sequential blocks and the picture came out cleaner than the truth.
-   *
-   * Passing no sessions here rather than deleting the machinery: `buildDisplayRows` already
-   * takes them as a parameter, so this switches the whole thing off — the header rows, the
-   * extent rails, and the band export, which all self-disable when no session row exists.
-   * The dead code comes out in its own change, when the files it lives in are not being
-   * edited by another session.
+   * Commits and uncommitted work, and nothing else. Sessions live in the strip above the
+   * graph — see SessionStrip.tsx for why they stopped being drawn among the commits.
    */
   const rows = useMemo(
-    () => buildDisplayRows(vgraph?.rows ?? [], view?.statuses ?? [], []),
+    () => buildDisplayRows(vgraph?.rows ?? [], view?.statuses ?? []),
     [vgraph, view],
   )
   /*
@@ -131,31 +118,6 @@ export function App() {
    */
   const artifactHref = (sha: string) => `/artifact?sha=${encodeURIComponent(sha)}`
 
-  /**
-   * Save one band's commits, rather than the whole graph.
-   *
-   * A session-sized excerpt is a few hundred pixels tall where a full history runs to
-   * thousands, which is the difference between an image someone reads in a pull request and
-   * one they scroll past. The rows are renumbered by `sliceRows`, because the rails read
-   * their vertical position from a row's index within the list being drawn.
-   */
-  const exportSession = useCallback(
-    (session: SessionBandInfo) => {
-      if (vgraph === null) return
-      const span = sessionSpan(vgraph.rows, rows, session)
-      if (span === null) return
-      try {
-        setExportError(null)
-        downloadSvg(
-          { graph: vgraph, rows: sliceRows(rows, span.first, span.last), now },
-          { scopeLabel: session.title ?? 'Untitled session' },
-        )
-      } catch (err) {
-        setExportError(err instanceof Error ? err.message : 'The export failed.')
-      }
-    },
-    [vgraph, rows, now],
-  )
 
   useEffect(() => {
     if (expanded === null) return
@@ -269,38 +231,12 @@ export function App() {
           <div className="graph">
             <div className="graph__body" style={{ height: bodyHeight(offsets) }}>
               <Rails rows={rows} width={vgraph.width} expandedIndex={expanded?.index ?? null} />
-              {/* The extent rails sit behind the cards but above the graph, in the right
-                  margin — the quietest part of a row, holding only a timestamp. Positions
-                  come from the same offsets the rails use, so a band stretches correctly
-                  when a detail panel opens inside it. */}
-              {vgraph.sessions.map((session) => {
-                const first = rows.findIndex(
-                  (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
-                )
-                const last = rows.findIndex(
-                  (r) =>
-                    r.kind === 'commit' &&
-                    r.row.commit.sha === vgraph.rows[session.endRow]?.commit.sha,
-                )
-                if (first === -1 || last === -1) return null
-                const top = rowTop(offsets, first)
-                const bottom = rowTop(offsets, last) + rowHeight(rows[last]!)
-                return (
-                  <div
-                    key={`band:${session.sessionId}`}
-                    className="sband"
-                    style={{ top, height: bottom - top }}
-                    aria-hidden="true"
-                  />
-                )
-              })}
               {rows.map((row) => (
                 <div
                   key={rowKey(row)}
                   className={[
                     'row',
                     row.kind === 'wip' ? 'wip' : '',
-                    row.kind === 'session' ? 'row--session' : '',
                     row.kind === 'commit' && row.row.commit.sha === focusedSha ? 'row--focus' : '',
                   ]
                     .filter(Boolean)
@@ -324,14 +260,8 @@ export function App() {
                         )
                       }
                     />
-                  ) : row.kind === 'wip' ? (
-                    <WipNode worktree={row.worktree} />
                   ) : (
-                    <SessionHeader
-                      session={row.session}
-                      now={now}
-                      onExport={() => exportSession(row.session)}
-                    />
+                    <WipNode worktree={row.worktree} />
                   )}
                 </div>
               ))}
@@ -380,8 +310,6 @@ function rowKey(row: import('./components/layout.js').DisplayRow): string {
       return row.row.commit.sha
     case 'wip':
       return `wip:${row.worktree.path}`
-    case 'session':
-      return `session:${row.session.sessionId}:${row.session.startRow}`
   }
 }
 

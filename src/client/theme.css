@@ -622,19 +622,7 @@ body {
  * lane identity and the value channel to activity heat; borrowing either would make a
  * session read as a branch, or argue with the heat chips it sits beside.
  */
-.row--session {
-  pointer-events: none;
-}
 
-.shead {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  font-size: 11.5px;
-  pointer-events: auto;
-  padding-right: 16px;
-}
 
 /*
  * Stroked, not filled, and `--ink-secondary` rather than the band's own colour: the icon
@@ -645,13 +633,6 @@ body {
  * `export/svg.ts` draws the same geometry at the same size. Changing either belongs with
  * a matching change there.
  */
-.shead__mark {
-  display: block;
-  width: 14px;
-  height: 14px;
-  color: var(--ink-secondary);
-  flex: none;
-}
 
 /*
  * Fixed-width gutter for the running-now dot, reserved whether or not there is one.
@@ -663,12 +644,6 @@ body {
  * `export/svg.ts` reproduces these numbers. Changing either belongs with a matching change
  * there.
  */
-.shead__live {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin-right: -4px;
-}
 
 /*
  * Marks the sessions that are actually running.
@@ -680,89 +655,23 @@ body {
  * `--live` is the hue the header's connection indicator already uses. Same claim, same
  * colour: something is alive and being watched right now.
  */
-.shead__live-dot {
-  display: block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--live);
-}
 
-.shead__title {
-  font-weight: 620;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 42%;
-}
 
-.shead__meta {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-muted);
-  white-space: nowrap;
-  flex: none;
-}
 
-.shead__multi {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--ink-secondary);
-  border: 1px solid var(--rule-strong);
-  border-radius: 3px;
-  padding: 0 4px;
-  flex: none;
-}
 
 /*
  * Quieter than the branch chip beside it and borderless on purpose. It qualifies the
  * count rather than adding a fact, so it should read as a footnote to the meta text, not
  * as a second badge competing with it.
  */
-.shead__elsewhere {
-  font-size: 10px;
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-  flex: none;
-}
 
-.shead__rule {
-  flex: 1;
-  height: 1px;
-  background: var(--rule);
-  min-width: 12px;
-}
 
 /*
  * Revealed on hover or focus. A band is an annotation, not a row of controls, and a button
  * visible on every one of them would read as the loudest thing on the graph.
  */
-.shead__export {
-  flex: none;
-  font: inherit;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-secondary);
-  background: var(--card);
-  border: 1px solid var(--rule-strong);
-  border-radius: 3px;
-  padding: 0 5px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 90ms ease-out;
-}
 
-.shead:hover .shead__export,
-.shead__export:focus-visible {
-  opacity: 1;
-}
 
-.shead__export:hover {
-  color: var(--ink);
-  background: var(--card-hover);
-}
 
 /*
  * When this session was last doing anything, in the right margin.
@@ -774,29 +683,12 @@ body {
  * `min-width` reserves the widest realistic value, so the rule to its left ends at the same
  * x on every row instead of breathing in and out as the numbers change.
  */
-.shead__when {
-  flex: none;
-  min-width: 26px;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
 
 /*
  * The extent rail. Right margin, because that is the quietest column on a row — only a
  * relative timestamp lives there — and because a band has to show where it *stops*, or an
  * unattributed commit below it looks like part of the session.
  */
-.sband {
-  position: absolute;
-  right: 6px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--rule-strong);
-  pointer-events: none;
-}
 
 /* ----------------------------------------------------------------- wip node */
 

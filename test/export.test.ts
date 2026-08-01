@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { assignLanes } from '../src/graph/lanes.js'
 import type { Commit } from '../src/graph/model.js'
 import type { GraphPayload, SessionBandInfo, WorktreeStatus } from '../src/api.js'
-import { buildDisplayRows, sessionSpan, sliceRows } from '../src/client/components/layout.js'
+import { buildDisplayRows, sliceRows } from '../src/client/components/layout.js'
 import { HEAT_HEX, LANE_HEX, PAPER, laneHex, mix } from '../src/client/export/palette.js'
 import { exportFilename } from '../src/client/export/download.js'
 import { ICON_VIEWBOX, MONITOR_PATHS } from '../src/client/icons.js'
@@ -72,7 +72,7 @@ function payload(commits: Commit[], overrides: Partial<GraphPayload> = {}): Grap
 
 const render = (graph: GraphPayload, worktrees: WorktreeStatus[] = []) =>
   renderGraphSvg(
-    { graph, rows: buildDisplayRows(graph.rows, worktrees, graph.sessions), now: 1_700_000_000_000 },
+    { graph, rows: buildDisplayRows(graph.rows, worktrees), now: 1_700_000_000_000 },
     { measure },
   )
 
@@ -131,140 +131,9 @@ describe('renderGraphSvg', () => {
     expect(widthOf(large)).toBe(widthOf(small))
   })
 
-  it('carries the "observed alongside" qualifier whenever a band is drawn', () => {
-    const session: SessionBandInfo = {
-      sessionId: 's1',
-      title: 'Understand background changes',
-      startRow: 0,
-      endRow: 1,
-      commitCount: 2,
-      promptCount: 7,
-      inputTokens: 2_400_000,
-      outputTokens: 60_000,
-      model: 'claude',
-      startedAt: Date.UTC(2026, 7, 1, 10, 0),
-      endedAt: Date.UTC(2026, 7, 1, 11, 0),
-      branches: ['main', 'feature'],
-      live: null,
-    }
-    const graph = payload([c('b2', 'second', 'a1'), c('a1', 'first')], { sessions: [session] })
-    const svg = render(graph)
 
-    expect(svg).toContain('Understand background changes')
-    expect(svg).toContain('2.5M tok')
-    expect(svg).toContain('2 branches')
-    // The wording is load-bearing: nothing records that a session *caused* a commit, and
-    // the file is read with none of the UI around it to qualify the claim.
-    expect(svg).toContain('observed alongside')
-    expect(svg).not.toContain('authored by them.</text>'.replace('them.', 'these'))
-  })
 
-  it('opens a band with the same icon geometry the DOM draws', () => {
-    /*
-     * The export re-draws every row by hand, so nothing but this stops the icon in a saved
-     * file drifting from the one on screen once someone edits `icons.ts`. Asserting the
-     * path data rather than "an icon is present" is the whole point.
-     */
-    const session: SessionBandInfo = {
-      sessionId: 's1',
-      title: 'Understand background changes',
-      startRow: 0,
-      endRow: 0,
-      commitCount: 1,
-      promptCount: 3,
-      inputTokens: 1000,
-      outputTokens: 100,
-      model: 'claude',
-      startedAt: Date.UTC(2026, 7, 1, 10, 0),
-      endedAt: Date.UTC(2026, 7, 1, 11, 0),
-      branches: ['main'],
-      live: null,
-    }
-    const svg = render(payload([c('a1', 'first')], { sessions: [session] }))
 
-    for (const d of MONITOR_PATHS) expect(svg).toContain(`<path d="${d}"/>`)
-    // Scaled into the 14px box `.shead__mark` declares, not left at the 24-unit viewbox.
-    expect(svg).toContain(`scale(${Math.round((14 / ICON_VIEWBOX) * 100) / 100})`)
-  })
-
-  it('dates a band by its last activity, and never claims it is running', () => {
-    const session: SessionBandInfo = {
-      sessionId: 's1',
-      title: 'Understand background changes',
-      startRow: 0,
-      endRow: 0,
-      commitCount: 1,
-      promptCount: 3,
-      inputTokens: 1000,
-      outputTokens: 100,
-      model: 'claude',
-      startedAt: Date.UTC(2026, 7, 1, 10, 0),
-      endedAt: Date.UTC(2026, 7, 1, 11, 0),
-      branches: ['main'],
-      live: { status: 'busy' },
-    }
-    const graph = payload([c('a1', 'first')], { sessions: [session] })
-    const svg = renderGraphSvg(
-      {
-        graph,
-        rows: buildDisplayRows(graph.rows, [], graph.sessions),
-        now: session.endedAt + 2 * 60 * 60 * 1000,
-      },
-      { measure },
-    )
-
-    // The measurement, in the margin, in the same words a commit row uses.
-    expect(svg).toContain('>2h<')
-
-    /*
-     * Liveness is deliberately absent. On screen a dot says "running right now" and is
-     * re-pushed the moment that stops being true; a file forwarded next week has no such
-     * correction available, so the export carries only what stays true — see the note in
-     * `renderSessionRow`. This asserts the omission, because a later change that "fixed the
-     * inconsistency" by drawing it would be a regression, not a fix.
-     */
-    expect(svg).not.toContain('busy')
-    expect(svg).not.toContain(LIVE_HEX)
-  })
-
-  it('keeps a dated band inside the card it is drawn in', () => {
-    /*
-     * The margin timestamp shortens the rule and squeezes the meta, so this is the widest a
-     * band's contents get. Exercised at the width where the fitting has least slack.
-     */
-    const session: SessionBandInfo = {
-      sessionId: 's1',
-      title: 'A session title that simply refuses to stop going on and on and on',
-      startRow: 0,
-      endRow: 0,
-      commitCount: 1,
-      promptCount: 3,
-      inputTokens: 2_400_000,
-      outputTokens: 60_000,
-      model: 'claude',
-      startedAt: Date.UTC(2026, 7, 1, 10, 0),
-      endedAt: Date.UTC(2026, 7, 1, 11, 0),
-      branches: ['main', 'feature', 'third'],
-      live: null,
-    }
-    const graph = payload([c('a1', 'first')], { sessions: [session] })
-    const svg = renderGraphSvg(
-      {
-        graph,
-        rows: buildDisplayRows(graph.rows, [], graph.sessions),
-        now: session.endedAt + 40 * 24 * 60 * 60 * 1000,
-      },
-      { measure },
-    )
-
-    const width = Number(/width="([\d.]+)"/.exec(svg)![1])
-    for (const [, x] of svg.matchAll(/<text x="([\d.-]+)"/g)) {
-      expect(Number(x)).toBeLessThan(width)
-    }
-    for (const [, x] of svg.matchAll(/translate\(([\d.-]+) /g)) {
-      expect(Number(x)).toBeLessThan(width)
-    }
-  })
 
   it('keeps every line of text inside the document', () => {
     /*
@@ -350,112 +219,6 @@ describe('renderGraphSvg', () => {
     const svg = render(payload([]))
     expect(svg).toContain('</svg>')
     expect(svg).toContain('0 commits')
-  })
-})
-
-describe('scoped export', () => {
-  const session: SessionBandInfo = {
-    sessionId: 's1',
-    title: 'Understand background changes',
-    startRow: 1,
-    endRow: 2,
-    commitCount: 2,
-    promptCount: 7,
-    inputTokens: 1000,
-    outputTokens: 100,
-    model: 'claude',
-    startedAt: 0,
-    endedAt: 60_000,
-    branches: ['main'],
-    live: null,
-  }
-
-  const scoped = () => {
-    const graph = payload(
-      [
-        c('d4', 'newest, outside the band', 'c3'),
-        c('c3', 'inside the band, newer', 'b2'),
-        c('b2', 'inside the band, older', 'a1'),
-        c('a1', 'oldest, outside the band'),
-      ],
-      { sessions: [session] },
-    )
-    const rows = buildDisplayRows(graph.rows, [], graph.sessions)
-    const span = sessionSpan(graph.rows, rows, session)!
-    return { graph, rows, span }
-  }
-
-  it('resolves a band to its display rows through the end commit sha', () => {
-    const { rows, span } = scoped()
-    // The header is spliced in above the band's first commit, so the display indices are
-    // not the graph indices the server sent.
-    expect(rows[span.first]!.kind).toBe('session')
-    expect(span.last).toBeGreaterThan(span.first)
-  })
-
-  it('renumbers a slice so its rails are drawn against the right rows', () => {
-    const { rows, span } = scoped()
-    const slice = sliceRows(rows, span.first, span.last)
-    expect(slice.map((r) => r.index)).toEqual([0, 1, 2])
-    // The originals are untouched; slicing must not mutate the live list.
-    expect(rows[span.first]!.index).toBe(span.first)
-  })
-
-  it('renders only the band, and counts only what it drew', () => {
-    const { graph, rows, span } = scoped()
-    const svg = renderGraphSvg(
-      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
-      { measure, scopeLabel: session.title! },
-    )
-
-    expect(svg).toContain('inside the band, newer')
-    expect(svg).toContain('inside the band, older')
-    expect(svg).not.toContain('outside the band')
-    // Two commits, not the repository's four.
-    expect(svg).toContain('2 commits')
-    expect(svg).not.toContain('4 commits')
-  })
-
-  it('names what it is an excerpt of, so it cannot pass as the whole history', () => {
-    const { graph, rows, span } = scoped()
-    const svg = renderGraphSvg(
-      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
-      { measure, scopeLabel: session.title! },
-    )
-    expect(svg).toContain('Understand background changes')
-    // The branch chip is replaced by the scope, not joined by it.
-    expect(svg).not.toContain('>main<')
-  })
-
-  it('clips the body so a rail leaving the last row cannot cross the footer', () => {
-    const { graph, rows, span } = scoped()
-    const svg = renderGraphSvg(
-      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
-      { measure, scopeLabel: session.title! },
-    )
-    expect(svg).toContain('<clipPath id="body">')
-    expect(svg).toContain('clip-path="url(#body)"')
-    // Nothing in a slice should produce undefined geometry.
-    expect(svg).not.toContain('NaN')
-  })
-
-  it('keeps the attribution wording on an excerpt, which is always a band', () => {
-    const { graph, rows, span } = scoped()
-    const svg = renderGraphSvg(
-      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
-      { measure, scopeLabel: session.title! },
-    )
-    expect(svg).toContain('observed alongside')
-  })
-
-  it('drops the band note from an excerpt that has no band in it', () => {
-    const { graph, rows, span } = scoped()
-    // Commits only, header excluded.
-    const svg = renderGraphSvg(
-      { graph, rows: sliceRows(rows, span.first + 1, span.last), now: 1_700_000_000_000 },
-      { measure },
-    )
-    expect(svg).not.toContain('observed alongside')
   })
 })
 

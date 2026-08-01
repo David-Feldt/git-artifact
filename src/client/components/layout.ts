@@ -1,16 +1,11 @@
 import type { GraphRow } from '../../graph/model.js'
-import type { SessionBandInfo, WorktreeStatus } from '../../api.js'
+import type { WorktreeStatus } from '../../api.js'
 
 /** Must match `--row-height` / `--lane-width` in theme.css. */
 export const ROW_HEIGHT = 44
 export const LANE_WIDTH = 22
 export const GUTTER_PAD = 14
 
-/**
- * Height of a session header row. Shorter than a commit row — it is a label, not an
- * entry, and giving it full height would make sessions look like graph nodes.
- */
-export const SESSION_HEADER_HEIGHT = 30
 
 /**
  * Height of the expanded commit panel.
@@ -42,28 +37,32 @@ export function gutterWidth(width: number): number {
 /**
  * A row on screen.
  *
- * Only `commit` rows come from `git log`. The other two are spliced in: uncommitted work
- * has no sha, and a session header describes a range rather than a point.
+ * Only `commit` rows come from `git log`. A `wip` row is spliced in, because uncommitted
+ * work has no sha to sit at.
  */
 export type DisplayRow =
   | { kind: 'commit'; row: GraphRow; index: number }
   | { kind: 'wip'; worktree: WorktreeStatus; lane: number; index: number }
-  | { kind: 'session'; session: SessionBandInfo; index: number }
 
-/** Height of one display row. Session headers are shorter; everything else is a full row. */
-export function rowHeight(row: DisplayRow): number {
-  return row.kind === 'session' ? SESSION_HEADER_HEIGHT : ROW_HEIGHT
+/**
+ * Height of one display row.
+ *
+ * Uniform now that session headers are gone, and kept as a function rather than inlined
+ * because every layer reads its geometry through this — collapsing it to a constant at the
+ * call sites is how the SVG and the HTML come to disagree the next time a row kind is added.
+ */
+export function rowHeight(_row: DisplayRow): number {
+  return ROW_HEIGHT
 }
 
 /**
  * Cumulative top offset of every row, plus a final entry for the total height.
  *
  * This is the single source of vertical geometry, and everything — the SVG rails, the HTML
- * cards, the detail panel, the session extent rails — reads from the same array. That
- * matters because there are now two independent reasons a row is not where
- * `index * ROW_HEIGHT` would put it: a session header is shorter than a commit row, and an
- * open detail panel injects a gap beneath its row. Computing each separately is how the
- * two layers drift apart by a few pixels and it looks like a rendering bug.
+ * cards, the detail panel — reads from the same array. A row is not simply at
+ * `index * ROW_HEIGHT`, because an open detail panel injects a gap beneath its row.
+ * Computing that separately in each layer is how the two drift apart by a few pixels and it
+ * reads as a rendering bug.
  *
  * Still O(n) and exact, so phase 7 virtualisation can slice this array rather than
  * measuring the DOM.
@@ -105,7 +104,7 @@ export function bodyHeight(offsets: number[]): number {
 }
 
 /**
- * Interleave WIP pseudo-nodes and session headers into the commit rows.
+ * Interleave WIP pseudo-nodes into the commit rows.
  *
  * Uncommitted changes belong above their worktree's HEAD, because newer sits at the top.
  * Inserting a row shifts everything below it, but not the *lane* geometry: a spliced row
@@ -118,21 +117,10 @@ export function bodyHeight(offsets: number[]): number {
 export function buildDisplayRows(
   rows: GraphRow[],
   worktrees: WorktreeStatus[],
-  sessions: SessionBandInfo[] = [],
 ): DisplayRow[] {
   const dirty = worktrees.filter((w) => w.files.length > 0)
 
-  // Session headers are keyed by the *graph* row they precede, which is why this is built
-  // before any splicing happens — once WIP rows are interleaved the display indices no
-  // longer line up with the graph indices the server sent.
-  const headerBefore = new Map<number, SessionBandInfo[]>()
-  for (const session of sessions) {
-    const list = headerBefore.get(session.startRow)
-    if (list) list.push(session)
-    else headerBefore.set(session.startRow, [session])
-  }
-
-  if (dirty.length === 0 && sessions.length === 0) {
+  if (dirty.length === 0) {
     return rows.map((row, index) => ({ kind: 'commit', row, index }))
   }
 
@@ -156,16 +144,10 @@ export function buildDisplayRows(
   for (const worktree of orphans) out.push({ kind: 'wip', worktree, lane: 0 })
 
   const placed = new Set<WorktreeStatus>()
-  rows.forEach((row, graphIndex) => {
-    // The session header goes above its band's first commit, but *below* any WIP node for
-    // that commit — uncommitted work is newer than the session that produced the commit
-    // beneath it, and the header would otherwise separate a WIP node from its own tip.
+  rows.forEach((row) => {
     for (const worktree of byHead.get(row.commit.sha) ?? []) {
       out.push({ kind: 'wip', worktree, lane: row.lane })
       placed.add(worktree)
-    }
-    for (const session of headerBefore.get(graphIndex) ?? []) {
-      out.push({ kind: 'session', session })
     }
     out.push({ kind: 'commit', row })
   })
@@ -187,30 +169,6 @@ export function buildDisplayRows(
  */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
-/**
- * Display-row range a session band covers, inclusive.
- *
- * `SessionBandInfo` indexes into the *graph* rows, but WIP nodes and headers are spliced
- * into the display list, so the two index spaces diverge the moment anything is
- * interleaved. Resolving the end through its sha is what keeps a band aligned with the
- * rows it actually describes.
- *
- * Returns null when either end is missing, which happens while the graph is reloading and
- * a band momentarily refers to a commit that is no longer in the window.
- */
-export function sessionSpan(
-  graphRows: GraphRow[],
-  rows: DisplayRow[],
-  session: SessionBandInfo,
-): { first: number; last: number } | null {
-  const first = rows.findIndex(
-    (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
-  )
-  const endSha = graphRows[session.endRow]?.commit.sha
-  const last = rows.findIndex((r) => r.kind === 'commit' && r.row.commit.sha === endSha)
-  if (first === -1 || last === -1 || last < first) return null
-  return { first, last }
-}
 
 /**
  * A contiguous run of rows, renumbered to stand alone.

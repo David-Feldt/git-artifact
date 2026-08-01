@@ -8,7 +8,6 @@ import {
   rowHeight,
   rowOffsets,
   rowTop,
-  sessionSpan,
 } from '../components/layout.js'
 import { railNodes, railPaths } from '../components/rail-paths.js'
 import { basename, formatTokens, heatBucket, relativeTime } from '../format.js'
@@ -101,19 +100,11 @@ const FONT = {
 const DEFAULT_CARD_WIDTH = 820
 const HEADER_HEIGHT = 48
 const FOOTER_HEIGHT = 34
-/** Right margin holding the session extent rails, mirroring `.sband`. */
-const BAND_MARGIN = 16
 const CARD_INSET = 4
 const PAD = 10
 const GAP = 8
 /** Below this there is no room for a legible ref name, so the chip is dropped entirely. */
 const MIN_REF_WIDTH = 34
-/** Shortest run of session-header rule worth drawing, reserved before the meta is fitted. */
-const MIN_RULE = 40
-/** Side of the icon opening a session band. Matches `.shead__mark` in `theme.css`. */
-const MARK_SIZE = 14
-/** Floor for the last-active column, mirroring `min-width` on `.shead__when`. */
-const WHEN_MIN_WIDTH = 26
 /**
  * Slack on chip text, absorbing the gap between the font measured and the font drawn.
  *
@@ -134,7 +125,7 @@ export function renderGraphSvg(input: ExportInput, options: ExportOptions): stri
   const cardWidth = options.cardWidth ?? DEFAULT_CARD_WIDTH
 
   const gutter = gutterWidth(graph.width)
-  const width = gutter + cardWidth + BAND_MARGIN
+  const width = gutter + cardWidth
   // No expanded panel: a detail panel is an interaction, and there is nothing to interact
   // with in a file.
   const offsets = rowOffsets(rows, null)
@@ -171,7 +162,6 @@ export function renderGraphSvg(input: ExportInput, options: ExportOptions): stri
     `<clipPath id="body"><rect x="0" y="0" width="${round(width)}" height="${round(bodyHeight)}"/></clipPath>`,
   )
   out.push(`<g transform="translate(0 ${HEADER_HEIGHT})" clip-path="url(#body)">`)
-  out.push(...renderBands(graph, rows, offsets, width))
   out.push(...renderRails(rows, offsets))
   for (const row of rows) {
     out.push(...renderRow(row, { graph, rows, offsets, gutter, cardWidth, now, measure }))
@@ -258,47 +248,13 @@ function renderFooter(
 
   out.push(text(16, baseline, 'git-artifact · static snapshot', FONT.footer, INK_MUTED))
 
-  /*
-   * The qualifier has to survive into the file.
-   *
-   * On screen, "observed alongside" sits next to a band the reader can hover for the full
-   * wording. An exported artifact is read with none of that context and is the version most
-   * likely to be forwarded, so the claim it makes about attribution has to be legible on
-   * its face — nothing records that a session *caused* a commit.
-   *
-   * Keyed off the rows actually drawn rather than `graph.sessions`, so an excerpt without a
-   * band does not carry a note about bands, and a session-scoped excerpt always does.
-   */
-  if (rows.some((row) => row.kind === 'session')) {
-    const note = 'Session bands are observed alongside these commits, not authored by them.'
-    out.push(text(width - 16, baseline, note, FONT.footer, INK_MUTED, 'end'))
-  } else if (graph.capped) {
+  if (graph.capped) {
     const note = `History capped at ${graph.maxCount} commits.`
     out.push(text(width - 16, baseline, note, FONT.footer, INK_MUTED, 'end'))
   }
   return out
 }
 
-/** Session extent rails in the right margin, mirroring `.sband`. */
-function renderBands(
-  graph: GraphPayload,
-  rows: DisplayRow[],
-  offsets: number[],
-  width: number,
-): string[] {
-  const out: string[] = []
-  for (const session of graph.sessions) {
-    const span = sessionSpan(graph.rows, rows, session)
-    if (!span) continue
-    const top = rowTop(offsets, span.first)
-    const bottom = rowTop(offsets, span.last) + rowHeight(rows[span.last]!)
-    out.push(
-      `<rect x="${round(width - 10)}" y="${round(top)}" width="3" height="${round(bottom - top)}" ` +
-        `rx="1.5" fill="${RULE_STRONG}"/>`,
-    )
-  }
-  return out
-}
 
 function renderRails(rows: DisplayRow[], offsets: number[]): string[] {
   const y = (index: number) => rowCenter(rows, offsets, index)
@@ -345,8 +301,6 @@ function renderRow(row: DisplayRow, ctx: RowContext): string[] {
       return renderCommitRow(row, ctx)
     case 'wip':
       return renderWipRow(row, ctx)
-    case 'session':
-      return renderSessionRow(row, ctx)
   }
 }
 
@@ -483,90 +437,6 @@ function renderWipRow(row: Extract<DisplayRow, { kind: 'wip' }>, ctx: RowContext
   return out
 }
 
-function renderSessionRow(
-  row: Extract<DisplayRow, { kind: 'session' }>,
-  ctx: RowContext,
-): string[] {
-  const { measure, gutter, cardWidth, now } = ctx
-  const session = row.session
-  const top = rowTop(ctx.offsets, row.index)
-  const mid = top + rowHeight(row) / 2
-  const left = gutter + CARD_INSET
-  const right = left + cardWidth - CARD_INSET * 2
-
-  const out: string[] = []
-
-  // No lane hue and no warm tint: hue means lane identity and value belongs to activity
-  // heat, so a band gets weight and position only.
-  out.push(icon(MONITOR_PATHS, left, mid - MARK_SIZE / 2, MARK_SIZE, INK_SECONDARY))
-
-  let x = left + MARK_SIZE + GAP
-
-  /*
-   * The running-now dot is deliberately *not* drawn here, and this is the one place the
-   * export departs from the screen on purpose rather than by drift.
-   *
-   * A dot meaning "this session is alive" is true for as long as it takes to save the file.
-   * On screen it is re-pushed the moment the registry changes; in an SVG forwarded to
-   * somebody next week it is simply a false statement, and the reader has nothing to check
-   * it against. The last-active time below survives the trip because it is a measurement,
-   * and the header stamps the file with the moment it was taken.
-   */
-
-  /*
-   * Last activity, in the right margin, matching `.shead__when`. Reserved before the meta
-   * is fitted so a long token count shortens itself rather than colliding with it.
-   */
-  const when = relativeTime(session.endedAt, now)
-  const whenWidth = Math.max(measure(when, FONT.sessionMeta), WHEN_MIN_WIDTH) + GAP
-
-  const title = fit(session.title ?? 'Untitled session', 320, FONT.sessionTitle, measure)
-  out.push(text(x, mid, title.text, FONT.sessionTitle, INK))
-  x += measure(title.text, FONT.sessionTitle) + GAP
-
-  const tokens = session.inputTokens + session.outputTokens
-  const parts = [
-    `${session.commitCount} commit${session.commitCount === 1 ? '' : 's'}`,
-    `${session.promptCount} prompt${session.promptCount === 1 ? '' : 's'}`,
-  ]
-  if (tokens > 0) parts.push(formatTokens(tokens))
-
-  /*
-   * Roughly a fifth of sessions touch more than one branch, and saying so beats leaving the
-   * reader to notice a band straddling two lanes. Its width is reserved before the meta is
-   * laid out, so a long token count shortens itself rather than running under the chip.
-   */
-  const multi = session.branches.length > 1 ? `${session.branches.length} branches` : null
-  const multiWidth = multi === null ? 0 : measure(multi, FONT.smallChip) + 12 + GAP
-
-  const meta = fit(
-    parts.join(' · '),
-    right - x - multiWidth - whenWidth - MIN_RULE,
-    FONT.sessionMeta,
-    measure,
-  )
-  out.push(text(x, mid, meta.text, FONT.sessionMeta, INK_MUTED))
-  x += measure(meta.text, FONT.sessionMeta) + GAP
-
-  if (multi !== null) {
-    const chip = chipAt(x, mid - 7, multi, FONT.smallChip, measure, {
-      fill: PAPER,
-      stroke: RULE_STRONG,
-      ink: INK_SECONDARY,
-    })
-    out.push(chip.svg)
-    x += chip.width + GAP
-  }
-
-  // Right-aligned against the card edge, so the column of times is straight down the page
-  // whatever the strings measure — the same thing `tabular-nums` buys on screen.
-  const whenX = right - measure(when, FONT.sessionMeta)
-  out.push(text(whenX, mid, when, FONT.sessionMeta, INK_MUTED))
-
-  const ruleEnd = whenX - GAP
-  if (x < ruleEnd) out.push(line(x, mid, ruleEnd, mid, RULE))
-  return out
-}
 
 /* ---------- primitives ---------- */
 
