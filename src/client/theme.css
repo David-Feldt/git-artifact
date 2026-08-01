@@ -502,6 +502,84 @@ body {
   opacity: 0.75;
 }
 
+/* ------------------------------------------------------------ session bands */
+
+/*
+ * A band gets position and weight, never hue and never a warm tint. Hue is committed to
+ * lane identity and the value channel to activity heat; borrowing either would make a
+ * session read as a branch, or argue with the heat chips it sits beside.
+ */
+.row--session {
+  pointer-events: none;
+}
+
+.shead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  font-size: 11.5px;
+  pointer-events: auto;
+  padding-right: 16px;
+}
+
+.shead__mark {
+  width: 4px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--ink-secondary);
+  flex: none;
+}
+
+.shead__title {
+  font-weight: 620;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42%;
+}
+
+.shead__meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  flex: none;
+}
+
+.shead__multi {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-secondary);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex: none;
+}
+
+.shead__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+  min-width: 12px;
+}
+
+/*
+ * The extent rail. Right margin, because that is the quietest column on a row — only a
+ * relative timestamp lives there — and because a band has to show where it *stops*, or an
+ * unattributed commit below it looks like part of the session.
+ */
+.sband {
+  position: absolute;
+  right: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--rule-strong);
+  pointer-events: none;
+}
+
 /* ----------------------------------------------------------------- wip node */
 
 .wip .card {

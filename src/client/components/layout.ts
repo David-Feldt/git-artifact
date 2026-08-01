@@ -1,5 +1,5 @@
 import type { GraphRow } from '../../graph/model.js'
-import type { WorktreeStatus } from '../../api.js'
+import type { SessionBandInfo, WorktreeStatus } from '../../api.js'
 
 /** Must match `--row-height` / `--lane-width` in theme.css. */
 export const ROW_HEIGHT = 44
@@ -17,8 +17,39 @@ export function laneX(lane: number): number {
   return GUTTER_PAD + lane * LANE_WIDTH + LANE_WIDTH / 2
 }
 
-export function rowY(index: number): number {
-  return index * ROW_HEIGHT + ROW_HEIGHT / 2
+/** Height of one display row. Session headers are shorter; everything else is a full row. */
+export function rowHeight(row: DisplayRow): number {
+  return row.kind === 'session' ? SESSION_HEADER_HEIGHT : ROW_HEIGHT
+}
+
+/**
+ * Cumulative top offset of every row, plus a final entry for the total height.
+ *
+ * Rows used to be a uniform height, so a position was just `index * ROW_HEIGHT`. Session
+ * headers broke that. Computing the offsets once and passing them down keeps the SVG rails
+ * and the HTML cards reading from a single source — the failure mode otherwise is the two
+ * layers drifting apart by a few pixels per header, which looks like a rendering bug
+ * rather than a layout one.
+ *
+ * Still O(n) and still exact, so phase 7 virtualisation can slice this array rather than
+ * re-measuring the DOM.
+ */
+export function rowOffsets(rows: DisplayRow[]): number[] {
+  const offsets = new Array<number>(rows.length + 1)
+  let top = 0
+  for (let i = 0; i < rows.length; i++) {
+    offsets[i] = top
+    top += rowHeight(rows[i]!)
+  }
+  offsets[rows.length] = top
+  return offsets
+}
+
+/** Vertical centre of a row, for placing a node or an edge endpoint. */
+export function rowCenter(rows: DisplayRow[], offsets: number[], index: number): number {
+  const top = offsets[index] ?? 0
+  const row = rows[index]
+  return top + (row ? rowHeight(row) : ROW_HEIGHT) / 2
 }
 
 export function gutterWidth(width: number): number {
@@ -32,6 +63,13 @@ export function gutterWidth(width: number): number {
 export type DisplayRow =
   | { kind: 'commit'; row: GraphRow; index: number }
   | { kind: 'wip'; worktree: WorktreeStatus; lane: number; index: number }
+  | { kind: 'session'; session: SessionBandInfo; index: number }
+
+/**
+ * Height of a session header row. Shorter than a commit row — it is a label, not an
+ * entry, and giving it full height would make sessions look like graph nodes.
+ */
+export const SESSION_HEADER_HEIGHT = 30
 
 /**
  * Interleave WIP pseudo-nodes into the commit rows.
@@ -47,9 +85,21 @@ export type DisplayRow =
 export function buildDisplayRows(
   rows: GraphRow[],
   worktrees: WorktreeStatus[],
+  sessions: SessionBandInfo[] = [],
 ): DisplayRow[] {
   const dirty = worktrees.filter((w) => w.files.length > 0)
-  if (dirty.length === 0) {
+
+  // Session headers are keyed by the *graph* row they precede, which is why this is built
+  // from `startRow` before any splicing happens — once WIP rows are interleaved the
+  // display indices no longer line up with the graph indices the server sent.
+  const headerBefore = new Map<number, SessionBandInfo[]>()
+  for (const session of sessions) {
+    const list = headerBefore.get(session.startRow)
+    if (list) list.push(session)
+    else headerBefore.set(session.startRow, [session])
+  }
+
+  if (dirty.length === 0 && sessions.length === 0) {
     return rows.map((row, index) => ({ kind: 'commit', row, index }))
   }
 
@@ -73,13 +123,19 @@ export function buildDisplayRows(
   for (const worktree of orphans) out.push({ kind: 'wip', worktree, lane: 0 })
 
   const placed = new Set<WorktreeStatus>()
-  for (const row of rows) {
+  rows.forEach((row, graphIndex) => {
+    // The session header goes above its band's first commit, but *below* any WIP node for
+    // that commit — uncommitted work is newer than the session that produced the commit
+    // beneath it, and the header would otherwise separate a WIP node from its own tip.
     for (const worktree of byHead.get(row.commit.sha) ?? []) {
       out.push({ kind: 'wip', worktree, lane: row.lane })
       placed.add(worktree)
     }
+    for (const session of headerBefore.get(graphIndex) ?? []) {
+      out.push({ kind: 'session', session })
+    }
     out.push({ kind: 'commit', row })
-  }
+  })
 
   // A worktree whose HEAD fell outside the loaded window would otherwise vanish silently.
   for (const worktree of dirty) {

@@ -89,9 +89,45 @@ export interface WorktreeLane {
  * before your last save. The client joins the two on `path` instead.
  */
 
+/**
+ * A run of commits observed alongside one Claude Code session.
+ *
+ * "Observed alongside", not "authored by", and the distinction is load-bearing. Nothing in
+ * a transcript records that a session caused a commit; it is inferred from timing, so a
+ * commit typed by hand shortly after Claude stopped lands in the band too. Copy that
+ * claims authorship would be asserting something the data cannot support.
+ */
+export interface SessionBandInfo {
+  sessionId: string
+  /** Title Claude generated for the session, or null if it never produced one. */
+  title: string | null
+  /** Inclusive indices into `GraphPayload.rows`. */
+  startRow: number
+  endRow: number
+  commitCount: number
+  /** Human turns only — tool results and sub-agent traffic excluded. */
+  promptCount: number
+  /** Input plus cache reads and creations; cache traffic dominates and is real spend. */
+  inputTokens: number
+  outputTokens: number
+  model: string | null
+  /** Epoch milliseconds spanning the whole session, which may exceed the band's commits. */
+  startedAt: number
+  endedAt: number
+  /** Branches the session touched. More than one for roughly a fifth of sessions. */
+  branches: string[]
+}
+
 export interface GraphPayload {
   repo: RepoInfo
   rows: GraphRow[]
+  /**
+   * Session bands, ordered by first row and guaranteed non-overlapping.
+   *
+   * Empty whenever Claude Code is absent, has no transcripts for this repository, or wrote
+   * a format we no longer recognise. None of those is an error — the graph is unaffected.
+   */
+  sessions: SessionBandInfo[]
   /**
    * Push events keyed by the sha the push landed on.
    *

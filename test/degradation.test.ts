@@ -133,6 +133,30 @@ describe('GraphStore', () => {
     expect(store.getStatus()!.worktrees).toEqual([])
   })
 
+  /*
+   * Tier B is enrichment and must never be load-bearing. A fixture repo has no transcripts
+   * anywhere, which is the same situation as Claude Code not being installed — the graph
+   * must come back complete with an empty session list and no problem reported.
+   *
+   * This is the half of the phase 4 exit criterion that says removing the session layer
+   * leaves the app fully functional.
+   */
+  it('serves a complete graph when there is no session data at all', async () => {
+    const store = new GraphStore(builders.branchMerge!(), { maxCount: 5000 })
+    const problems: unknown[] = []
+    store.on('event', (event) => {
+      if (event.type === 'problem') problems.push(event.data)
+    })
+    await store.init()
+
+    const graph = store.getGraph()!
+    expect(graph.sessions).toEqual([])
+    expect(graph.rows).toHaveLength(4)
+    expect(graph.worktreeLanes.length).toBeGreaterThan(0)
+    // Absence of session data is normal, not a failure worth telling the user about.
+    expect(problems).toEqual([])
+  })
+
   it('picks up a new commit on refresh', async () => {
     const dir = builders.linear!()
     const store = new GraphStore(dir, { maxCount: 5000 })

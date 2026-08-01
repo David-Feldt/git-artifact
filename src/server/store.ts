@@ -6,21 +6,26 @@ import type {
   PushMarker,
   RepoInfo,
   ServerEvent,
+  SessionBandInfo,
   StatusPayload,
   WorktreeLane,
 } from '../api.js'
-import type { GraphRow } from '../graph/model.js'
+import type { Commit, GraphRow } from '../graph/model.js'
 import { assignLanes, graphWidth } from '../graph/lanes.js'
 import { gitOrNull } from '../git/exec.js'
 import { readLog } from '../git/log.js'
 import { readPushEvents } from '../git/reflog.js'
 import { openRepo, refreshRepo, type Repo } from '../git/repo.js'
 import { readStatus } from '../git/status.js'
+import { attributeCommits, buildBands } from '../sessions/attribute.js'
+import { readSessionsForRepo } from '../sources/claude-code.js'
 
 export interface StoreOptions {
   /** History cap. `git log --all` unbounded on a large repo hangs the first render. */
   maxCount: number
   since?: string
+  /** Override the session attribution idle window. See `sessions/attribute.ts`. */
+  sessionIdleLimitMs?: number
 }
 
 /**
@@ -122,6 +127,7 @@ export class GraphStore extends EventEmitter {
         rows,
         pushes: await this.readPushes(repo),
         worktreeLanes: this.worktreeLanes(repo, rows),
+        sessions: await this.readSessions(repo, commits),
         width: graphWidth(rows),
         // A full read returns exactly the cap when there is more history behind it.
         capped: commits.length >= this.options.maxCount,
@@ -203,6 +209,54 @@ export class GraphStore extends EventEmitter {
       // Push markers are an enrichment; losing them must not cost us the graph.
     }
     return byS
+  }
+
+  /**
+   * Session bands for the loaded commits.
+   *
+   * Every failure mode here is silent by design: no Claude Code installed, no transcripts
+   * for this repo, an unreadable or unrecognised file. Tier B enriches the view and must
+   * never be able to take it down, so this returns an empty list rather than surfacing a
+   * problem banner.
+   *
+   * Commits are matched on *committer* time, not author time — a rebase or an amend
+   * rewrites the committer date and leaves the author date alone, so author time would
+   * attribute rewritten commits to whenever they were originally written.
+   */
+  private async readSessions(repo: Repo, commits: Commit[]): Promise<SessionBandInfo[]> {
+    try {
+      const roots = [repo.root, ...repo.worktrees.filter((w) => !w.bare).map((w) => w.path)]
+      const sessions = await readSessionsForRepo(roots)
+      if (sessions.length === 0) return []
+
+      const attribution = attributeCommits(
+        commits.map((c) => ({ sha: c.sha, at: c.commitDate * 1000 })),
+        sessions,
+        { idleLimitMs: this.options.sessionIdleLimitMs },
+      )
+      const byId = new Map(sessions.map((s) => [s.sessionId, s]))
+
+      return buildBands(commits.map((c) => c.sha), attribution).flatMap((band) => {
+        const session = byId.get(band.sessionId)
+        if (!session) return []
+        return [{
+          sessionId: band.sessionId,
+          title: session.title,
+          startRow: band.startRow,
+          endRow: band.endRow,
+          commitCount: band.shas.length,
+          promptCount: session.prompts.length,
+          inputTokens: session.inputTokens,
+          outputTokens: session.outputTokens,
+          model: session.model,
+          startedAt: session.start,
+          endedAt: session.end,
+          branches: session.branches,
+        }]
+      })
+    } catch {
+      return []
+    }
   }
 
   /** Locate each live worktree's HEAD in the rendered rows. See {@link WorktreeLane}. */

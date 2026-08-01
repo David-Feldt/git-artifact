@@ -3,12 +3,15 @@ import type { RepoInfo } from '../api.js'
 import { CommitCard } from './components/CommitCard.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
+import { SessionHeader } from './components/SessionHeader.js'
 import { WorktreeStrip } from './components/WorktreeStrip.js'
 import {
   GUTTER_PAD,
   ROW_HEIGHT,
   buildDisplayRows,
   gutterWidth,
+  rowHeight,
+  rowOffsets,
 } from './components/layout.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
 
@@ -25,9 +28,12 @@ export function App() {
   }, [])
 
   const rows = useMemo(
-    () => buildDisplayRows(graph?.rows ?? [], status?.worktrees ?? []),
+    () => buildDisplayRows(graph?.rows ?? [], status?.worktrees ?? [], graph?.sessions ?? []),
     [graph, status],
   )
+  // Rows are no longer a uniform height, so positions come from here rather than from
+  // multiplying an index. Both the SVG rails and the HTML cards read the same array.
+  const offsets = useMemo(() => rowOffsets(rows), [rows])
 
   useEffect(() => {
     document.title = graph ? `${graph.repo.name} · git-artifact` : 'git-artifact'
@@ -118,23 +124,45 @@ export function App() {
           <EmptyState repo={graph.repo} />
         ) : (
           <div className="graph">
-            <div
-              className="graph__body"
-              style={{ height: rows.length * ROW_HEIGHT }}
-            >
+            <div className="graph__body" style={{ height: offsets[rows.length] ?? 0 }}>
               <Rails rows={rows} width={graph.width} />
+              {/* The extent rails sit behind the cards but above the graph, in the right
+                  margin — the quietest part of a row, holding only a timestamp. */}
+              {graph.sessions.map((session) => {
+                const first = rows.findIndex(
+                  (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
+                )
+                const last = rows.findIndex(
+                  (r) =>
+                    r.kind === 'commit' &&
+                    r.row.commit.sha === graph.rows[session.endRow]?.commit.sha,
+                )
+                if (first === -1 || last === -1) return null
+                const top = offsets[first] ?? 0
+                const bottom = (offsets[last] ?? 0) + rowHeight(rows[last]!)
+                return (
+                  <div
+                    key={`band:${session.sessionId}`}
+                    className="sband"
+                    style={{ top, height: bottom - top }}
+                    aria-hidden="true"
+                  />
+                )
+              })}
               {rows.map((row) => (
                 <div
-                  key={row.kind === 'commit' ? row.row.commit.sha : `wip:${row.worktree.path}`}
+                  key={rowKey(row)}
                   className={[
                     'row',
                     row.kind === 'wip' ? 'wip' : '',
+                    row.kind === 'session' ? 'row--session' : '',
                     row.kind === 'commit' && row.row.commit.sha === focusedSha ? 'row--focus' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
                   style={{
-                    top: row.index * ROW_HEIGHT,
+                    top: offsets[row.index] ?? 0,
+                    height: rowHeight(row),
                     paddingLeft: gutterWidth(graph.width) - GUTTER_PAD / 2,
                   }}
                 >
@@ -144,8 +172,10 @@ export function App() {
                       now={now}
                       pushes={graph.pushes[row.row.commit.sha]}
                     />
-                  ) : (
+                  ) : row.kind === 'wip' ? (
                     <WipNode worktree={row.worktree} />
+                  ) : (
+                    <SessionHeader session={row.session} />
                   )}
                 </div>
               ))}
@@ -167,6 +197,18 @@ export function App() {
       </footer>
     </div>
   )
+}
+
+/** Stable React key per row kind; a session and a commit can never collide. */
+function rowKey(row: import('./components/layout.js').DisplayRow): string {
+  switch (row.kind) {
+    case 'commit':
+      return row.row.commit.sha
+    case 'wip':
+      return `wip:${row.worktree.path}`
+    case 'session':
+      return `session:${row.session.sessionId}:${row.session.startRow}`
+  }
 }
 
 function ConnectionBadge({ connection }: { connection: Connection }) {

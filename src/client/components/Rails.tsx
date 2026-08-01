@@ -1,6 +1,14 @@
 import { Fragment } from 'react'
 import type { DisplayRow } from './layout.js'
-import { LANE_WIDTH, ROW_HEIGHT, gutterWidth, laneColor, laneX, rowY } from './layout.js'
+import {
+  LANE_WIDTH,
+  ROW_HEIGHT,
+  gutterWidth,
+  laneColor,
+  laneX,
+  rowCenter,
+  rowOffsets,
+} from './layout.js'
 
 interface RailsProps {
   rows: DisplayRow[]
@@ -16,7 +24,9 @@ interface RailsProps {
  * the fixed row height keeps the two in lockstep.
  */
 export function Rails({ rows, width }: RailsProps) {
-  const height = rows.length * ROW_HEIGHT
+  const offsets = rowOffsets(rows)
+  const height = offsets[rows.length] ?? 0
+  const y = (index: number) => rowCenter(rows, offsets, index)
 
   return (
     <svg
@@ -27,18 +37,46 @@ export function Rails({ rows, width }: RailsProps) {
       aria-hidden="true"
     >
       {rows.map((row, index) => (
-        <Fragment key={index}>{renderEdges(row, rows[index + 1])}</Fragment>
+        <Fragment key={index}>{renderEdges(row, rows[index + 1], y)}</Fragment>
       ))}
       {rows.map((row, index) => (
-        <Fragment key={`n${index}`}>{renderNode(row)}</Fragment>
+        <Fragment key={`n${index}`}>{renderNode(row, y)}</Fragment>
       ))}
     </svg>
   )
 }
 
-function renderEdges(row: DisplayRow, next: DisplayRow | undefined) {
-  const y1 = rowY(row.index)
-  const y2 = rowY(row.index + 1)
+type CenterOf = (index: number) => number
+
+function renderEdges(row: DisplayRow, next: DisplayRow | undefined, y: CenterOf) {
+  const y1 = y(row.index)
+  const y2 = y(row.index + 1)
+
+  /*
+   * A session header carries no graph geometry of its own. Every live lane runs straight
+   * through it, exactly as it does past a WIP node — the header is an annotation sitting
+   * beside the graph, not a node in it.
+   */
+  if (row.kind === 'session') {
+    const lanes = new Set<number>()
+    if (next?.kind === 'commit') {
+      lanes.add(next.row.lane)
+      for (const edge of next.row.edges) lanes.add(edge.fromLane)
+      for (const lane of next.row.incoming) lanes.add(lane)
+    }
+    return (
+      <>
+        {[...lanes].map((lane) => (
+          <path
+            key={lane}
+            className="rail"
+            stroke={laneColor(lane)}
+            d={`M ${laneX(lane)} ${y1} L ${laneX(lane)} ${y2}`}
+          />
+        ))}
+      </>
+    )
+  }
 
   // A WIP row has no commit edges of its own. Every lane alive around it passes straight
   // through, and its own lane runs down into the commit it is sitting on.
@@ -116,8 +154,11 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1} ${y1 + bend} ${x2} ${y2 - bend} ${x2} ${y2}`
 }
 
-function renderNode(row: DisplayRow) {
-  const y = rowY(row.index)
+function renderNode(row: DisplayRow, centerOf: CenterOf) {
+  // A session header has no node — nothing on the graph happened at that row.
+  if (row.kind === 'session') return null
+
+  const y = centerOf(row.index)
 
   if (row.kind === 'wip') {
     // Hollow and dashed: not a commit, and not pretending to be one.

@@ -102,6 +102,31 @@ different question, already answered per-branch by the ahead/behind counts on ea
 Reflogs expire — 90 days for reachable entries by default — so older history simply has no
 markers. That is normal, not an error.
 
+## Session bands
+
+If you use Claude Code, commits are grouped under the session they were made during, with
+its title, prompt count, and token cost. Token cost is the one figure git genuinely cannot
+produce.
+
+**These are observed alongside, not authored by.** Nothing in a transcript records that a
+session caused a commit — it is inferred from timing. A commit you type by hand shortly
+after Claude stops will land in the band. The wording throughout says "observed alongside"
+for exactly this reason.
+
+Attribution gives each commit to the single session whose most recent activity precedes it
+most closely, ignoring any session idle more than 30 minutes. The naive alternative — a
+session owns every commit between its first and last record — produces nonsense, because
+sessions sit idle for days: measured on real data, one session left open 13.7 days
+swallowed every commit three other sessions made inside its window, stacking four bands on
+one row. Design notes and measurements are in
+[`docs/design/session-bands.md`](docs/design/session-bands.md).
+
+Everything about Claude Code lives in `src/sources/claude-code.ts`. The transcript format
+is not a stable public contract, so a format change is a one-file fix. If Claude Code is
+absent, has no transcripts for this repository, or writes something unrecognised, the
+graph renders exactly as before with no session data and no error. Nothing else depends on
+it.
+
 ## How liveness works
 
 Filesystem events are a **trigger, not a source of truth**. A change under `.git` or in a
