@@ -9,6 +9,72 @@ they stand.
 
 ---
 
+## Correction: this document solved the wrong problem
+
+Recorded rather than rewritten, because the reasoning below is sound and the premise it
+rests on is not.
+
+The stated goal was "generate graphical artifacts **to commits + branches** to visually
+understand what's been worked on." That was restated, in the first reply and never
+revisited, as "the graph is not saveable" — dropping the unit. Everything here follows from
+that: the artifact is *the graph*, and the only question is how much of it.
+
+**The unit was never the graph.** It is a commit, or a branch. Under the real goal:
+
+- **Branch scope is the primary case**, not the refinement deferred at the bottom of this
+  document with an unresolved merge-base question. That question is now on the critical
+  path.
+- **Commit scope does not appear here at all.** It is the other half of the goal and was
+  never considered.
+- **Whole-graph and session scope, both built, are neither.** They are useful — a repository
+  at a glance is a real thing to want — but they are not what was asked for.
+
+### The format ranking probably inverts too
+
+A graph is rails and nodes, so SVG was right for it. A *commit* is mostly diff text, and the
+reason this project renders graph-as-SVG and text-as-HTML in the first place is that SVG is
+bad at text. Option B — self-contained HTML — was dismissed above as "a saved dashboard, not
+an artifact." Under commit and branch scope it is likely the correct choice, and the SVG
+text path built for phase 5 is the wrong substrate for it.
+
+### And "artifact" never meant a picture of the graph
+
+The intended meaning, stated plainly after phase 5 shipped: an artifact is **a webpage
+Claude or Codex generates** about a change — explaining why it matters, with diagrams —
+in the manner of the rendered artifact linked from `session-bands.md`, but produced per
+commit and per branch rather than by hand.
+
+So the answer to "rendering or summarising" is **summarising**, and the page is authored by
+the model rather than laid out by this project. That inverts what the work is:
+
+| | This document assumed | Actually |
+|---|---|---|
+| Unit | the graph | a commit, a branch |
+| Format | SVG, rasterisable | HTML, model-authored |
+| This project's job | draw the picture | assemble the context and drive the harness |
+| Hard part | text metrics in SVG | context quality, and prompt |
+
+The consequence worth stating: the context bundle is the product. `/api/commit` already
+returns structured diffs, session bands already carry the intent behind a commit — prompts,
+title, cost — and push markers already carry when it left the machine. That is a
+substantially richer brief than `git show` can hand a model, and the session attribution
+built in phase 4 for display turns out to be the part that lets a generated page say *why*
+these files changed together.
+
+Two promises in the README have to move, and should move deliberately rather than by
+erosion:
+
+- **"No outbound network requests of any kind."** Generation sends a diff to a model.
+  Shelling out to the user's already-installed `claude`/`codex` CLI keeps the daemon holding
+  no credentials and opening no sockets, and narrows the promise honestly to: no telemetry
+  ever, and generation happens per click, never in the background.
+- **"Anything other than `GET` is refused outright."** Generation is the first genuinely
+  mutating action — it spends tokens and produces a file — and a browser cannot shell out,
+  so the daemon must, over `POST`. The rule narrows to *no endpoint mutates the repository*,
+  which is the part that was load-bearing.
+
+---
+
 ## An export is a different document from the dashboard
 
 The dashboard is tuned for glancing at a second monitor while you work: it updates, it has
