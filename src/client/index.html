@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Nothing is loaded from anywhere but this daemon, and the token lives in the URL,
+         so keep it out of any Referer header a stray link might produce. -->
+    <meta name="referrer" content="no-referrer" />
+    <title>git-artifact</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
