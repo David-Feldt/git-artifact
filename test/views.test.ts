@@ -114,7 +114,24 @@ describe('buildViews', () => {
     const views = buildViews(payload(DIVERGED, LANES), [])
 
     expect(views.map((v) => v.key)).toEqual([ALL_VIEW, '/repo', '/repo/wt'])
-    expect(views.map((v) => v.label)).toEqual(['All', 'main', 'feat'])
+    // Labelled by directory, not by the branch checked out there. `/repo/wt` holds
+    // `feat`, and labelling it `feat` is what made a worktree unfindable on screen.
+    expect(views.map((v) => v.label)).toEqual(['All', 'repo', 'wt'])
+  })
+
+  it('labels a detached worktree by name, since it has no branch to borrow', () => {
+    /*
+     * The case the old scheme could not express at all: every detached worktree rendered
+     * the literal string "detached", so two of them were indistinguishable.
+     */
+    const lanes = [
+      LANES[0]!,
+      worktree({ path: '/repo/one', head: 'base', detached: true }),
+      worktree({ path: '/repo/two', head: 'root', detached: true }),
+    ]
+    const views = buildViews(payload(DIVERGED, lanes), [])
+
+    expect(views.map((v) => v.label)).toEqual(['All', 'repo', 'one', 'two'])
   })
 
   it('draws shared history in every tab that can reach it', () => {

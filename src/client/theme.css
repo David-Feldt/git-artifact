@@ -304,6 +304,25 @@ body {
   font-size: 11px;
 }
 
+/*
+ * What is checked out here, secondary to the worktree name beside it. Muted rather than
+ * smaller-and-dark, because it competes with the name for the same glance and the name is
+ * the one that identifies the tab.
+ *
+ * Truncated, uniquely among the tab's parts. The strip scrolls horizontally, so an
+ * untruncated `feature/some-long-description` would push later tabs off the edge — which
+ * is how a reader comes to believe the tabs they cannot see do not exist.
+ */
+.vtab__branch {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .vtab__tag,
 .vtab__off {
   font-size: 10px;

@@ -90,6 +90,16 @@ Header counts and the export follow the active tab. Reporting the repository's t
 a graph showing one worktree's slice of it would be describing something the reader cannot
 see.
 
+A tab is labelled by **worktree**, with the branch as secondary text. The strip labelled by
+branch, which was defensible there — a chip annotated a branch tip in the lanes, so it was
+named after what it pointed at. A tab is the worktree itself: the path identifies it and
+stays put, while the branch in it can move, change, or not exist. Labelling by branch left
+`.claude/worktrees/infra` showing as `merge-detail-sessions` with nothing connecting the
+two, and rendered every detached worktree as the same literal string. The branch is also
+the only part of a tab that truncates, because the strip scrolls and an untruncated long
+ref pushes later tabs off the edge — which is how a reader concludes the tabs they cannot
+see do not exist.
+
 ## Verified
 
 - **Shared history appears in every tab that can reach it.** Asserted directly, since it

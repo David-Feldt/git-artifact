@@ -74,7 +74,17 @@ export function buildViews(
     const keep = worktree.head === null ? new Set<string>() : ancestry(graph.rows, worktree.head)
     return {
       key: worktree.path,
-      label: worktree.detached ? 'detached' : (worktree.branch ?? worktree.name),
+      /*
+       * The directory basename, not the branch — carried over unexamined from the strip
+       * this replaced, where a chip genuinely was pointing at a branch tip in the lanes.
+       *
+       * A tab is the worktree itself, and the path is what identifies it and what stays
+       * put; the branch checked out there can move, change, or be absent. Labelling by
+       * branch left `.claude/worktrees/infra` showing as `merge-detail-sessions` with
+       * nothing on screen connecting the two, and gave every detached worktree the same
+       * label. The branch is still shown, beside the name rather than instead of it.
+       */
+      label: worktree.name,
       worktree,
       graph: scope(graph, keep, worktree, grafted),
       statuses: statuses.filter((s) => s.path === worktree.path),

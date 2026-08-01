@@ -1,6 +1,17 @@
-import type { WorktreeStatus } from '../../api.js'
+import type { WorktreeLane, WorktreeStatus } from '../../api.js'
 import type { GraphView } from '../views.js'
 import { laneColor } from './layout.js'
+
+/**
+ * What is checked out in a worktree, as secondary text beside its name.
+ *
+ * Null when there is nothing useful to say — an unborn branch has no name yet, and
+ * inventing one would be worse than the tab simply showing the worktree alone.
+ */
+function checkedOut(worktree: WorktreeLane): string | null {
+  if (worktree.detached) return '(detached)'
+  return worktree.branch
+}
 
 interface ViewTabsProps {
   views: GraphView[]
@@ -63,6 +74,9 @@ export function ViewTabs({ views, active, statuses, onSelect }: ViewTabsProps) {
               <span className="vtab__count">{view.graph.rows.length}</span>
             ) : (
               <>
+                {checkedOut(worktree) && (
+                  <span className="vtab__branch">{checkedOut(worktree)}</span>
+                )}
                 {worktree.isMain && <span className="vtab__tag">main</span>}
                 {dirty > 0 && <span className="vtab__dirty">{dirty} dirty</span>}
                 {status?.ahead ? <span className="vtab__ab">↑{status.ahead}</span> : null}
