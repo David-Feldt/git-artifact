@@ -145,6 +145,22 @@ export interface SessionBandInfo {
   live: SessionLiveness | null
 }
 
+/**
+ * How much one commit changed, in the same terms `git log --shortstat` reports.
+ *
+ * On a merge these are the first-parent numbers — what the merge brought in — matching
+ * what {@link CommitDetail} shows when the row is expanded. Git's default combined diff
+ * would list only the hand-resolved conflicts, which on a clean merge is nothing.
+ *
+ * Binary files count toward `files` and contribute no lines, because git counts no lines
+ * for them. A commit that changes nothing is `0/0/0`, not absent.
+ */
+export interface CommitStat {
+  files: number
+  additions: number
+  deletions: number
+}
+
 export interface GraphPayload {
   repo: RepoInfo
   rows: GraphRow[]
@@ -163,6 +179,18 @@ export interface GraphPayload {
    * different question, answered per-branch by the ahead/behind counts.
    */
   pushes: Record<string, PushMarker[]>
+  /**
+   * Diff size per sha, for the counts on each row. See {@link CommitStat}.
+   *
+   * A map rather than a field on `GraphRow`, for the same reason `pushes` is one: rows come
+   * out of `assignLanes`, which is pure and knows nothing about diffs. Keying by sha also
+   * means the worktree tabs get it for free — they re-lane a filtered commit list, and a
+   * sha-keyed map survives that untouched.
+   *
+   * Empty when the extra traversal failed, and missing for any commit it did not cover; the
+   * row then renders without counts. Losing them must not cost the graph.
+   */
+  stats: Record<string, CommitStat>
   /** Tip annotations, one per live worktree. See {@link WorktreeLane}. */
   worktreeLanes: WorktreeLane[]
   /**

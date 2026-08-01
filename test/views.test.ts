@@ -51,6 +51,7 @@ function payload(commits: Commit[], lanes: WorktreeLane[], sessions: SessionBand
     },
     rows,
     pushes: {},
+    stats: {},
     worktreeLanes: lanes,
     artifacts: [],
     sessions,

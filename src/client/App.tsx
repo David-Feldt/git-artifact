@@ -250,6 +250,7 @@ export function App() {
                       row={row.row}
                       now={now}
                       pushes={vgraph.pushes[row.row.commit.sha]}
+                      stat={vgraph.stats[row.row.commit.sha]}
                       expanded={expanded?.sha === row.row.commit.sha}
                       artifactHref={artifactHref(row.row.commit.sha)}
                       artifactReady={generated.has(row.row.commit.sha)}

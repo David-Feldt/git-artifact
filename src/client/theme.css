@@ -538,6 +538,46 @@ body {
   }
 }
 
+/*
+ * Diff size, in the strip of right-aligned metadata the row ends with.
+ *
+ * Two fixed-width slots rather than one run of text, because the value of these numbers is
+ * comparative — the eye is reading down the column for the big commit, not reading any one
+ * row. Tabular figures and a `min-width` per slot are what make that column exist; without
+ * them each row's numbers sit wherever its subject happens to end.
+ *
+ * `flex: none` throughout, so the subject is what gives up space when the window narrows.
+ */
+.card__delta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: none;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.card__files {
+  color: var(--ink-muted);
+  min-width: 48px;
+  text-align: right;
+}
+
+.card__lines {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 74px;
+}
+
+.card__added {
+  color: var(--diff-add-ink);
+}
+
+.card__deleted {
+  color: var(--diff-del-ink);
+}
+
 .card__author {
   font-size: 11.5px;
   color: var(--ink-secondary);

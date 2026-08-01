@@ -15,7 +15,7 @@ import type {
 import type { Commit, GraphRow } from '../graph/model.js'
 import { assignLanes, graphWidth } from '../graph/lanes.js'
 import { gitOrNull } from '../git/exec.js'
-import { readLog } from '../git/log.js'
+import { readLog, readLogStats } from '../git/log.js'
 import { readPushEvents } from '../git/reflog.js'
 import { openRepo, refreshRepo, type Repo } from '../git/repo.js'
 import { readCommitDetail } from '../git/show.js'
@@ -175,15 +175,19 @@ export class GraphStore extends EventEmitter {
       const repo = this.repo ? await refreshRepo(this.repo) : await openRepo(this.repoPath)
       this.repo = repo
 
-      const commits = await readLog(this.repoPath, {
-        maxCount: this.options.maxCount,
-        since: this.options.since,
-      })
+      const logOptions = { maxCount: this.options.maxCount, since: this.options.since }
+      // Issued together: the stats traversal makes git diff every commit it walks, and
+      // that is latency the graph should wait beside rather than behind.
+      const [commits, stats] = await Promise.all([
+        readLog(this.repoPath, logOptions),
+        this.readStats(logOptions),
+      ])
       const rows = assignLanes(commits, { grafted: repo.grafted })
 
       this.graph = {
         repo: this.repoInfo(repo),
         rows,
+        stats,
         pushes: await this.readPushes(repo),
         worktreeLanes: this.worktreeLanes(repo, rows),
         sessions: await this.readSessions(repo, commits),
@@ -242,6 +246,22 @@ export class GraphStore extends EventEmitter {
       this.emitEvent({ type: 'status', data: this.status })
     } catch (err) {
       this.reportProblem('Could not read the working tree status', err)
+    }
+  }
+
+  /**
+   * Diff size per commit, for the counts on each row.
+   *
+   * Swallowed like the other enrichments, and for a sharper reason than most: the counts
+   * come from a second `git log` that asks for more work than the first one, so it is the
+   * read most likely to time out on a large repository or to be refused by an old git that
+   * has no `--diff-merges`. Rows without counts are a smaller loss than no rows.
+   */
+  private async readStats(opts: { maxCount: number; since?: string }) {
+    try {
+      return await readLogStats(this.repoPath, opts)
+    } catch {
+      return {}
     }
   }
 

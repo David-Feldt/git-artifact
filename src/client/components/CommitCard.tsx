@@ -1,4 +1,4 @@
-import type { PushMarker } from '../../api.js'
+import type { CommitStat, PushMarker } from '../../api.js'
 import type { RefDecoration } from '../../graph/model.js'
 import type { GraphRow } from '../../graph/model.js'
 import { laneColor } from './layout.js'
@@ -11,6 +11,8 @@ interface CommitCardProps {
   now: number
   /** Pushes that landed on this exact commit, if any. */
   pushes?: PushMarker[]
+  /** How much this commit changed. Absent when the counts could not be read. */
+  stat?: CommitStat
   expanded: boolean
   onToggle: () => void
   /** Where this commit's generated page lives. Absent when generation is unavailable. */
@@ -29,6 +31,7 @@ export function CommitCard({
   row,
   now,
   pushes,
+  stat,
   expanded,
   onToggle,
   artifactHref,
@@ -71,6 +74,7 @@ export function CommitCard({
         <span className="card__subject" title={commit.subject}>
           {commit.subject || <em>(no message)</em>}
         </span>
+        {stat !== undefined && <Delta stat={stat} />}
         <span className="card__author" title={commit.authorEmail}>
           {commit.authorName}
         </span>
@@ -127,6 +131,36 @@ export function CommitCard({
         </a>
       )}
     </>
+  )
+}
+
+/**
+ * How much this commit changed: files touched, then lines added and removed.
+ *
+ * Rendered only when the counts actually arrived — see `GraphPayload.stats`. An empty
+ * commit does arrive, as 0/0/0, and says so; that is a fact about the commit rather than a
+ * gap in the read, and the two must not look alike.
+ *
+ * Zero sides are dropped rather than printed as `+0`, the same rule the WIP node's chips
+ * follow. A commit that only adds files reads as one number instead of two, and the strip
+ * stays right-aligned so the counts still form a column down the graph.
+ */
+function Delta({ stat }: { stat: CommitStat }) {
+  return (
+    <span
+      className="card__delta"
+      title={`${stat.files} file${stat.files === 1 ? '' : 's'} changed, ${stat.additions} insertion${stat.additions === 1 ? '' : 's'}(+), ${stat.deletions} deletion${stat.deletions === 1 ? '' : 's'}(-)`}
+    >
+      <span className="card__files">
+        {stat.files} file{stat.files === 1 ? '' : 's'}
+      </span>
+      <span className="card__lines">
+        {stat.additions > 0 && <span className="card__added">+{stat.additions}</span>}
+        {/* U+2212 minus, not a hyphen: it matches the plus in width and weight, so the
+            two numbers line up instead of the minus reading as a dash. */}
+        {stat.deletions > 0 && <span className="card__deleted">−{stat.deletions}</span>}
+      </span>
+    </span>
   )
 }
 

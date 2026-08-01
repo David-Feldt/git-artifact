@@ -1,3 +1,4 @@
+import type { CommitStat } from '../api.js'
 import type { Commit, RefDecoration } from '../graph/model.js'
 import { git, GitError } from './exec.js'
 
@@ -60,6 +61,89 @@ export async function readLog(cwd: string, opts: LogOptions = {}): Promise<Commi
   }
 
   return parseLog(out)
+}
+
+/**
+ * Matches git's `--shortstat` summary line.
+ *
+ * Safe to pattern-match on the prose only because `exec.ts` pins `LC_ALL=C`; under a
+ * translated locale git writes this line in the user's language. Both counts are optional
+ * — a commit that only adds files has no deletions clause, and git omits it entirely.
+ */
+const SHORTSTAT =
+  /^\s*(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/m
+
+/**
+ * Read how much each commit changed, keyed by sha.
+ *
+ * A second traversal rather than a flag on {@link readLog}, for two reasons. `--shortstat`
+ * makes git diff every commit it walks, which is the one part of this read whose cost
+ * scales with the *content* of history rather than its shape — kept separate, it runs
+ * alongside the graph read instead of in front of it. And it can then fail on its own: the
+ * caller drops the counts and still has a graph.
+ *
+ * `--diff-merges=first-parent` makes a merge report what it brought in, matching the detail
+ * panel's `-m --first-parent`. Without it git shows the combined diff, which lists only the
+ * hand-resolved conflicts and on a clean merge is empty — accurate, and a useless answer to
+ * "how big was this". The flag needs git 2.31; on anything older this whole call fails and
+ * the counts are simply absent.
+ *
+ * `--topo-order` is not cosmetic here either. It is what makes `--max-count` select the same
+ * commits {@link readLog} selected, so the two results line up.
+ */
+export async function readLogStats(
+  cwd: string,
+  opts: LogOptions = {},
+): Promise<Record<string, CommitStat>> {
+  const args = [
+    'log',
+    '--all',
+    '--topo-order',
+    // Separator leads each record: `--shortstat` appends its line *after* the pretty
+    // format, so a trailing separator would put it in the next record.
+    `--pretty=format:${RECORD}%H`,
+    '--shortstat',
+    '--diff-merges=first-parent',
+    '-M', // Rename detection, so a moved file is not counted as a whole add plus delete.
+    '--no-color',
+  ]
+  if (opts.maxCount !== undefined) args.push(`--max-count=${opts.maxCount}`)
+  if (opts.since !== undefined) args.push(`--since=${opts.since}`)
+
+  try {
+    return parseLogStats(await git(cwd, args))
+  } catch (err) {
+    // Same normal-state carve-out as `readLog`: a fresh repo has no commits to measure.
+    if (err instanceof GitError && /does not have any commits yet|bad revision/i.test(err.stderr)) {
+      return {}
+    }
+    throw err
+  }
+}
+
+/** Exported for tests: parse `--pretty=format:<RECORD>%H --shortstat` output. */
+export function parseLogStats(raw: string): Record<string, CommitStat> {
+  const stats: Record<string, CommitStat> = {}
+
+  for (const record of raw.split(RECORD)) {
+    if (record === '') continue
+
+    const newline = record.indexOf('\n')
+    const sha = (newline === -1 ? record : record.slice(0, newline)).trim()
+    if (sha === '') continue
+
+    // No summary line at all is git's way of saying the commit changed nothing — an empty
+    // commit, or a merge that brought in no net change. That is a real 0/0/0, not a gap.
+    const match = newline === -1 ? null : SHORTSTAT.exec(record.slice(newline + 1))
+
+    stats[sha] = {
+      files: match === undefined || match === null ? 0 : Number(match[1]),
+      additions: Number(match?.[2] ?? 0),
+      deletions: Number(match?.[3] ?? 0),
+    }
+  }
+
+  return stats
 }
 
 /** Exported for tests: parse the raw `git log` output produced by {@link FORMAT}. */
