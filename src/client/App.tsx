@@ -317,6 +317,7 @@ export function App() {
                       now={now}
                       pushes={vgraph.pushes[row.row.commit.sha]}
                       expanded={expanded?.sha === row.row.commit.sha}
+                      artifactHref={artifactHref(row.row.commit.sha)}
                       onToggle={() =>
                         setSelected((current) =>
                           current === row.row.commit.sha ? null : row.row.commit.sha,
@@ -349,7 +350,6 @@ export function App() {
                     error={detail.error}
                     lane={expanded.lane}
                     onClose={close}
-                    artifactHref={artifactHref(expanded.sha)}
                   />
                 </div>
               )}

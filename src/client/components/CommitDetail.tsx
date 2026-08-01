@@ -1,6 +1,5 @@
 import type { CommitDetail, DiffFile, DiffHunk } from '../../api.js'
 import { laneColor } from './layout.js'
-import { CHART_NETWORK_PATHS, ICON_STROKE, ICON_VIEWBOX } from '../icons.js'
 
 /**
  * Ceiling on how many lines of one file's patch reach the DOM.
@@ -20,7 +19,6 @@ interface CommitDetailPanelProps {
   lane: number
   onClose: () => void
   /** Where this commit's generated page lives. Absent when no harness is configured. */
-  artifactHref?: string
 }
 
 export function CommitDetailPanel({
@@ -29,7 +27,6 @@ export function CommitDetailPanel({
   error,
   lane,
   onClose,
-  artifactHref,
 }: CommitDetailPanelProps) {
   return (
     <div className="detail" style={{ ['--detail-accent' as string]: laneColor(lane) }}>
@@ -42,13 +39,13 @@ export function CommitDetailPanel({
       ) : loading || detail === null ? (
         <div className="detail__notice">Reading the commit…</div>
       ) : (
-        <Loaded detail={detail} artifactHref={artifactHref} />
+        <Loaded detail={detail} />
       )}
     </div>
   )
 }
 
-function Loaded({ detail, artifactHref }: { detail: CommitDetail; artifactHref?: string }) {
+function Loaded({ detail }: { detail: CommitDetail }) {
   const authored = new Date(detail.authorDate * 1000)
   // Committer and author differ after a rebase, a cherry-pick, or a patch applied on
   // someone's behalf — exactly the cases where knowing both is the point.
@@ -68,50 +65,6 @@ function Loaded({ detail, artifactHref }: { detail: CommitDetail; artifactHref?:
           {authored.toLocaleString()}
         </span>
         <span className="detail__spacer" />
-        {artifactHref !== undefined && (
-          /*
-           * Lives here rather than on the row itself: the card is already a button, and a
-           * link inside a button is invalid. It also reads better here — you open a commit
-           * to look at it, and this is the thing to do next.
-           *
-           * A real link, not a `window.open` handler. A generated page is a document — it
-           * costs tokens to write, it is cached on disk under an immutable sha, and it is
-           * the thing you would want to keep, revisit, or send to someone. That belongs in
-           * a tab, which comes with an address bar, a back button, printing, and zoom; a
-           * popup has none of those. An anchor is also never blocked, because a click on a
-           * link is unambiguously the user asking, which removes a failure mode the popup
-           * carried permanently.
-           *
-           * The anchor also restores middle-click, cmd-click and "open in new tab" — all of
-           * which a click handler swallows.
-           *
-           * Named per sha, so asking twice focuses the tab already open on that commit
-           * rather than stacking a second one. Deliberately no `rel="noopener"`: it would
-           * force a fresh context and defeat that reuse, and this is our own page on our own
-           * origin, which is the case the attribute is not for.
-           */
-          <a
-            className="detail__explain"
-            href={artifactHref}
-            target={`git-artifact-${detail.sha}`}
-            title="Write a page explaining this commit — opens in a new tab"
-          >
-            <svg
-              viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={ICON_STROKE}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              {CHART_NETWORK_PATHS.map((d) => (
-                <path key={d} d={d} />
-              ))}
-            </svg>
-            Generate artifact
-          </a>
-        )}
         <DiffStat detail={detail} />
       </div>
 

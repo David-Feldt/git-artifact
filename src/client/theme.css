@@ -466,7 +466,9 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  width: 100%;
+  /* `flex: 1` rather than `width: 100%`: the card now shares the row with the artifact
+     link, and a hard 100% would push that sibling out of the row entirely. */
+  flex: 1;
   padding: 5px 10px;
   border-radius: 7px;
   border: 1px solid transparent;
@@ -942,48 +944,9 @@ body {
  * spends tokens, so it reads as a deliberate action rather than another quiet affordance —
  * but it still sits inside an opened commit, not on every row.
  */
-/*
- * An anchor styled as a button, because it opens a document in a tab and a link is the only
- * element that does that natively — middle-click, cmd-click and "open in new tab" all come
- * with it, and none of them survive a click handler.
- *
- * `text-decoration: none` and the explicit `color` are the two things a link brings that a
- * button did not; everything else below is unchanged from when this was a `<button>`.
- */
-.detail__explain {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font: inherit;
-  font-size: 11.5px;
-  flex: none;
-  color: var(--detail-accent);
-  text-decoration: none;
-  background: color-mix(in srgb, var(--detail-accent) 8%, var(--card));
-  border: 1px solid color-mix(in srgb, var(--detail-accent) 35%, transparent);
-  border-radius: 5px;
-  padding: 3px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-}
 
-/* Sized in em so the icon tracks the label if the type scale ever moves. */
-.detail__explain svg {
-  width: 1.2em;
-  height: 1.2em;
-  flex: none;
-}
 
-.detail__explain:hover {
-  background: color-mix(in srgb, var(--detail-accent) 16%, var(--card));
-  border-color: var(--detail-accent);
-  color: var(--detail-accent);
-}
 
-.detail__explain:focus-visible {
-  outline: 2px solid var(--detail-accent);
-  outline-offset: 2px;
-}
 
 .detail__stat {
   display: flex;
@@ -1385,4 +1348,47 @@ body {
   font-size: 10px;
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Generate an artifact for this commit.
+ *
+ * Icon only, and invisible until the row is hovered or the link is focused. It appears on
+ * every commit, and a labelled control repeated down the whole graph would compete with the
+ * subjects and rails that the view exists to show. Takes the lane's colour, like everything
+ * else that belongs to a particular commit.
+ */
+.card__artifact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  border-radius: 5px;
+  color: var(--artifact-accent, var(--ink-muted));
+  border: 1px solid transparent;
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+}
+
+.card__artifact svg {
+  width: 14px;
+  height: 14px;
+}
+
+.row:hover .card__artifact,
+.card__artifact:focus-visible {
+  opacity: 1;
+}
+
+.card__artifact:hover {
+  background: color-mix(in srgb, var(--artifact-accent) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--artifact-accent) 40%, transparent);
+}
+
+.card__artifact:focus-visible {
+  outline: 2px solid var(--artifact-accent);
+  outline-offset: 1px;
 }
