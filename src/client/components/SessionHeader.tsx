@@ -1,8 +1,14 @@
 import type { SessionBandInfo } from '../../api.js'
 import { formatTokens } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
 
 interface SessionHeaderProps {
-  session: SessionBandInfo
+  /**
+   * `elsewhere` is set by `views.ts` when a worktree tab holds only part of a band. The
+   * prop is widened rather than `SessionBandInfo` itself, because it is a property of the
+   * view rather than of the session — the wire type stays a description of what happened.
+   */
+  session: SessionBandInfo & { elsewhere?: number }
   /** Save this band alone, or absent while the graph is still settling. */
   onExport?: () => void
 }
@@ -23,7 +29,24 @@ export function SessionHeader({ session, onExport }: SessionHeaderProps) {
 
   return (
     <div className="shead" title={sessionTooltip(session)}>
-      <span className="shead__mark" aria-hidden="true" />
+      {/*
+       * Hidden from the accessibility tree: the title beside it already says what the row
+       * is, so announcing an icon here would only repeat it.
+       */}
+      <svg
+        className="shead__mark"
+        viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={ICON_STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {MONITOR_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
       <span className="shead__title">{session.title ?? 'Untitled session'}</span>
       <span className="shead__meta">
         {session.commitCount} commit{session.commitCount === 1 ? '' : 's'}
@@ -35,6 +58,16 @@ export function SessionHeader({ session, onExport }: SessionHeaderProps) {
         // Roughly a fifth of sessions touch more than one branch. Saying so beats leaving
         // the reader to notice that the band straddles two lanes.
         <span className="shead__multi">{session.branches.length} branches</span>
+      )}
+      {session.elsewhere !== undefined && session.elsewhere > 0 && (
+        /*
+         * The count to the left is scoped to this tab, and the same band one tab over will
+         * report a different one. Without this the two look like a contradiction; with it
+         * they read as two views of one session, which is what they are.
+         */
+        <span className="shead__elsewhere" title={`${session.elsewhere} more in another worktree`}>
+          +{session.elsewhere} elsewhere
+        </span>
       )}
       <span className="shead__rule" />
       {onExport && (
