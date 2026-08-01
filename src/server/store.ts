@@ -8,6 +8,7 @@ import type {
   RepoInfo,
   ServerEvent,
   SessionBandInfo,
+  SessionLiveness,
   StatusPayload,
   WorktreeLane,
 } from '../api.js'
@@ -20,7 +21,18 @@ import { openRepo, refreshRepo, type Repo } from '../git/repo.js'
 import { readCommitDetail } from '../git/show.js'
 import { readStatus } from '../git/status.js'
 import { attributeCommits, buildBands } from '../sessions/attribute.js'
-import { readSessionsForRepo } from '../sources/claude-code.js'
+import { readLiveSessions, readSessionsForRepo, type LiveSession } from '../sources/claude-code.js'
+
+/**
+ * Narrow a registry entry to what the wire carries.
+ *
+ * The pid is deliberately dropped. It is what the server checks liveness *with*, and it is
+ * a fact about this machine that the browser has no use for and an exported artifact should
+ * certainly not carry.
+ */
+function liveness(entry: LiveSession | undefined): SessionLiveness | null {
+  return entry === undefined ? null : { status: entry.status }
+}
 
 /**
  * How many commit patches to keep. Small, because the point is only to make re-opening a
@@ -34,6 +46,14 @@ export interface StoreOptions {
   since?: string
   /** Override the session attribution idle window. See `sessions/attribute.ts`. */
   sessionIdleLimitMs?: number
+  /**
+   * Override the home directory the Claude Code sources read from. For tests.
+   *
+   * Both sources take it, or a test would get fixture transcripts joined against the
+   * developer's real running sessions — which is exactly the kind of pass that depends on
+   * who ran it.
+   */
+  claudeHome?: string
 }
 
 /**
@@ -259,7 +279,7 @@ export class GraphStore extends EventEmitter {
   private async readSessions(repo: Repo, commits: Commit[]): Promise<SessionBandInfo[]> {
     try {
       const roots = [repo.root, ...repo.worktrees.filter((w) => !w.bare).map((w) => w.path)]
-      const sessions = await readSessionsForRepo(roots)
+      const sessions = await readSessionsForRepo(roots, { home: this.options.claudeHome })
       if (sessions.length === 0) return []
 
       const attribution = attributeCommits(
@@ -268,6 +288,7 @@ export class GraphStore extends EventEmitter {
         { idleLimitMs: this.options.sessionIdleLimitMs },
       )
       const byId = new Map(sessions.map((s) => [s.sessionId, s]))
+      const live = await readLiveSessions({ home: this.options.claudeHome })
 
       return buildBands(commits.map((c) => c.sha), attribution).flatMap((band) => {
         const session = byId.get(band.sessionId)
@@ -285,10 +306,51 @@ export class GraphStore extends EventEmitter {
           startedAt: session.start,
           endedAt: session.end,
           branches: session.branches,
+          live: liveness(live.get(band.sessionId)),
         }]
       })
     } catch {
       return []
+    }
+  }
+
+  /**
+   * Re-read which sessions are running, and nothing else.
+   *
+   * The registry changes for reasons the repository knows nothing about — a session starts,
+   * goes idle, exits — so it gets its own refresh rather than riding on the graph's. That
+   * separation is not tidiness. A full graph refresh re-parses transcripts, and the
+   * transcript of the session whose status just changed is precisely the one being appended
+   * to, so its size-and-mtime cache entry is always cold. Re-reading a 9 MB file every time
+   * Claude picks up a tool would put a live session's own chatter in the update path.
+   *
+   * Publishes only on an actual change. Status flips arrive in bursts and most of them do
+   * not alter what any band renders; pushing an unchanged graph down the SSE would re-render
+   * the client's whole tree for nothing.
+   */
+  async refreshLiveness(): Promise<void> {
+    const graph = this.graph
+    if (graph === null || graph.sessions.length === 0) return
+
+    try {
+      const live = await readLiveSessions({ home: this.options.claudeHome })
+      let changed = false
+
+      const sessions = graph.sessions.map((band) => {
+        const next = liveness(live.get(band.sessionId))
+        if (next?.status === band.live?.status && (next === null) === (band.live === null)) {
+          return band
+        }
+        changed = true
+        return { ...band, live: next }
+      })
+
+      if (!changed) return
+      // A new object, because the client diffs payloads by identity.
+      this.graph = { ...graph, sessions }
+      this.emitEvent({ type: 'graph', data: this.graph })
+    } catch {
+      // Tier B. Bands keep whatever liveness they last had rather than losing the graph.
     }
   }
 

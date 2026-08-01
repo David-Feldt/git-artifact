@@ -74,6 +74,7 @@ function session(over: Partial<SessionBandInfo> = {}): SessionBandInfo {
     startedAt: 0,
     endedAt: 1,
     branches: ['main'],
+    live: null,
     ...over,
   }
 }

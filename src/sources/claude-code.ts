@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
@@ -22,6 +22,98 @@ import { createInterface } from 'node:readline'
 /** Where transcripts live. Overridable for tests. */
 export function transcriptRoot(home = homedir()): string {
   return path.join(home, '.claude', 'projects')
+}
+
+/**
+ * Where the live-session registry lives — one `<pid>.json` per running session.
+ *
+ * Separate from the transcripts and separate from the graph: a transcript is a record of
+ * what happened, this is a claim about what is happening. Overridable for tests.
+ */
+export function sessionRegistryRoot(home = homedir()): string {
+  return path.join(home, '.claude', 'sessions')
+}
+
+/** A session Claude Code says is running right now. */
+export interface LiveSession {
+  sessionId: string
+  pid: number
+  /**
+   * Claude Code's own word for what the session is doing — `busy`, `idle`, `waiting` and
+   * `shell` are the values seen. Deliberately typed as a string rather than a union: a
+   * value we have not seen before should reach the UI verbatim, not be dropped for failing
+   * to match a list written today.
+   */
+  status: string | null
+}
+
+/**
+ * Which sessions are alive, keyed by session id.
+ *
+ * This is the one thing about a session that is *not* inferred. Attribution and idle
+ * windows are guesses from timing; this is a registry entry naming a pid, and a pid either
+ * exists or it does not. A session with no entry here is not running.
+ *
+ * Liveness is `process.kill(pid, 0)` — a signal-0 probe, which checks for the process and
+ * delivers nothing. It is a syscall, not a spawn, so `git/exec.ts` remains the only place
+ * in the project that starts a process. `EPERM` counts as alive: the process exists and
+ * merely belongs to another user, which cannot happen for a session of our own but is the
+ * safe reading if it ever does.
+ *
+ * **Pid reuse is the one false positive available.** A session that dies without cleaning
+ * up leaves its file behind, and the kernel could eventually hand that pid to something
+ * else. Verifying `procStart` against the real process start time would close it, and
+ * would cost a `ps` spawn to do it — not worth it for a mark on a band. The stale entry
+ * would additionally have to name a session that committed to *this* repository before
+ * anything showed, since the caller joins on session id.
+ *
+ * Tier B throughout: no registry, no directory, unparseable JSON, an entry missing a pid —
+ * every one of them means "nothing is known to be live", never an error.
+ */
+export async function readLiveSessions(
+  options: { home?: string } = {},
+): Promise<Map<string, LiveSession>> {
+  const live = new Map<string, LiveSession>()
+  const base = sessionRegistryRoot(options.home)
+
+  let entries: string[]
+  try {
+    entries = (await readdir(base)).filter((f) => f.endsWith('.json'))
+  } catch {
+    return live // No Claude Code, or a version that does not keep a registry.
+  }
+
+  for (const entry of entries) {
+    let record: Record<string, unknown>
+    try {
+      record = JSON.parse(await readFile(path.join(base, entry), 'utf8')) as Record<string, unknown>
+    } catch {
+      continue // Being rewritten as we read it, or not JSON at all.
+    }
+
+    const sessionId = str(record.sessionId)
+    const pid = num(record.pid)
+    if (sessionId === null || pid <= 0) continue
+    if (!pidAlive(pid)) continue
+
+    /*
+     * Two live entries for one session id should not happen. If it ever does, the later
+     * file wins rather than the first — a resumed session is likelier to be the one still
+     * running than the entry that was already there.
+     */
+    live.set(sessionId, { sessionId, pid, status: str(record.status) })
+  }
+
+  return live
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
 }
 
 /**

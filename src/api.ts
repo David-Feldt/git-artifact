@@ -101,6 +101,27 @@ export interface WorktreeLane {
  * commit typed by hand shortly after Claude stopped lands in the band too. Copy that
  * claims authorship would be asserting something the data cannot support.
  */
+/**
+ * Set when Claude Code's registry says this session is running right now.
+ *
+ * The one fact about a band that is not inferred. Everything else here is deduced from
+ * timing — this is a registry entry naming a live pid, so `live: null` means the session is
+ * not running rather than "we could not tell".
+ *
+ * The exception, worth stating because it is the only one: an absent or unreadable registry
+ * also produces `null` everywhere, which reads as "nothing is running". That is the correct
+ * failure direction — a missing dot is unremarkable, a dot on a session that has been over
+ * for a week is a lie the picture tells.
+ */
+export interface SessionLiveness {
+  /**
+   * What Claude Code says the session is doing: `busy`, `idle`, `waiting`, `shell`. An
+   * unrecognised value is passed through rather than dropped, so the client must treat this
+   * as opaque text.
+   */
+  status: string | null
+}
+
 export interface SessionBandInfo {
   sessionId: string
   /** Title Claude generated for the session, or null if it never produced one. */
@@ -120,6 +141,8 @@ export interface SessionBandInfo {
   endedAt: number
   /** Branches the session touched. More than one for roughly a fifth of sessions. */
   branches: string[]
+  /** Non-null only while the session is actually running. See {@link SessionLiveness}. */
+  live: SessionLiveness | null
 }
 
 export interface GraphPayload {

@@ -64,6 +64,18 @@
   --danger: #b3261e;
 
   /*
+   * "Something is running right now" — the connection indicator, and a session band whose
+   * process is alive.
+   *
+   * Its own token rather than a reference to `--lane-7`, despite being the same green the
+   * header already uses. A lane hue means lane identity everywhere else on this page, and a
+   * dot in that green sitting a few pixels from the rails would invite exactly that reading.
+   * Naming it separately means a future palette change to lane 7 cannot silently redefine
+   * what "live" looks like.
+   */
+  --live: #008300;
+
+  /*
    * Diff add/delete. The one place in this theme where hue carries meaning, and the
    * least safe place to let it: red/green is the exact pair deuteranopia and protanopia
    * collapse. It is used anyway because it is the convention every diff a developer has
@@ -640,24 +652,38 @@ body {
 }
 
 /*
- * The "this session has stopped" mark, and the quietest thing in the row on purpose.
+ * Fixed-width gutter for the running-now dot, reserved whether or not there is one.
  *
- * `--ink-muted` rather than `--danger`: nearly every band in a repository's history is an
- * ended session, so this fires on almost every row, and a red one would turn a wall of
- * normal history into a wall of alarm. It is a state, not a fault.
+ * The negative right margin pulls the monitor back inside the row's 9px flex gap, so an
+ * unmarked band looks exactly as it did before this existed and a marked one gains a dot
+ * without pushing its own title out of the column its neighbours sit in.
  *
- * The negative margin pulls it inside the flex `gap` so it sits against the monitor rather
- * than floating between the monitor and the title — the pair has to read as one mark with
- * a modifier, not as two separate icons.
- *
- * `export/svg.ts` draws the same geometry at the same size. Changing either belongs with a
- * matching change there.
+ * `export/svg.ts` reproduces these numbers. Changing either belongs with a matching change
+ * there.
  */
-.shead__mark--ended {
-  color: var(--ink-muted);
-  width: 11px;
-  height: 11px;
-  margin-left: -5px;
+.shead__live {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: -4px;
+}
+
+/*
+ * Marks the sessions that are actually running.
+ *
+ * The only saturated thing on a band, and it has earned it: everything else in this row is
+ * inferred from timing, and this one fact is not. It is rare by nature — usually zero bands
+ * on screen, occasionally one — so it reads as a highlight rather than as decoration.
+ *
+ * `--live` is the hue the header's connection indicator already uses. Same claim, same
+ * colour: something is alive and being watched right now.
+ */
+.shead__live-dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--live);
 }
 
 .shead__title {
@@ -734,6 +760,26 @@ body {
 .shead__export:hover {
   color: var(--ink);
   background: var(--card-hover);
+}
+
+/*
+ * When this session was last doing anything, in the right margin.
+ *
+ * Mono and tabular so the column of times down the page stays a column — proportional
+ * digits make "2h" and "11m" ragged at the right edge, which is the one alignment a reader
+ * scanning for the most recent thing actually uses.
+ *
+ * `min-width` reserves the widest realistic value, so the rule to its left ends at the same
+ * x on every row instead of breathing in and out as the numbers change.
+ */
+.shead__when {
+  flex: none;
+  min-width: 26px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -896,6 +942,14 @@ body {
  * spends tokens, so it reads as a deliberate action rather than another quiet affordance —
  * but it still sits inside an opened commit, not on every row.
  */
+/*
+ * An anchor styled as a button, because it opens a document in a tab and a link is the only
+ * element that does that natively — middle-click, cmd-click and "open in new tab" all come
+ * with it, and none of them survive a click handler.
+ *
+ * `text-decoration: none` and the explicit `color` are the two things a link brings that a
+ * button did not; everything else below is unchanged from when this was a `<button>`.
+ */
 .detail__explain {
   display: inline-flex;
   align-items: center;
@@ -904,6 +958,7 @@ body {
   font-size: 11.5px;
   flex: none;
   color: var(--detail-accent);
+  text-decoration: none;
   background: color-mix(in srgb, var(--detail-accent) 8%, var(--card));
   border: 1px solid color-mix(in srgb, var(--detail-accent) 35%, transparent);
   border-radius: 5px;
@@ -922,6 +977,7 @@ body {
 .detail__explain:hover {
   background: color-mix(in srgb, var(--detail-accent) 16%, var(--card));
   border-color: var(--detail-accent);
+  color: var(--detail-accent);
 }
 
 .detail__explain:focus-visible {
@@ -1181,4 +1237,152 @@ body {
 .load-more:hover {
   background: var(--card-hover);
   color: var(--ink);
+}
+
+/* --------------------------------------------------------------- session strip */
+
+/*
+ * Sessions as cards above the graph, newest first.
+ *
+ * Deliberately unconnected to the commits below: which commits a session produced is
+ * inferred from timing and, with sessions running in parallel, is wrong often enough to
+ * matter. Everything on a card is read from a transcript instead, so the strip makes no
+ * claim it cannot support. See SessionStrip.tsx.
+ *
+ * Same idiom as the worktree strip directly above it — a horizontal row that scrolls rather
+ * than wraps, so the graph never loses vertical space to it.
+ */
+.sstrip {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--card) 35%, var(--paper));
+  flex: none;
+  overflow-x: auto;
+}
+
+.sstrip__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  flex: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.sstrip__cards {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.scard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+  min-width: 190px;
+  max-width: 260px;
+  padding: 7px 10px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Weight, not hue: hue belongs to lane identity everywhere else in this view. */
+.scard--live {
+  border-color: var(--rule-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.scard__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scard__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--lane-7);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lane-7) 18%, transparent);
+}
+
+.scard__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.scard__when {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.scard__branches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/*
+ * A branch tag is the one hard link this card has to the graph below: `gitBranch` is
+ * stamped on every transcript record, so it is read rather than deduced. Neutral-toned
+ * rather than lane-coloured — a session can touch several branches, and tinting each tag
+ * would spend lane hue on something that is not a lane.
+ */
+.scard__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-secondary);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 0 5px;
+  max-width: 130px;
+  min-width: 0;
+}
+
+/* Sized in em so it tracks the label if the type scale moves. It must not shrink: a
+   squashed icon reads as a rendering fault, where a clipped branch name reads as a long
+   branch name. */
+.scard__branch svg {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  opacity: 0.75;
+}
+
+.scard__branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.scard__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
 }

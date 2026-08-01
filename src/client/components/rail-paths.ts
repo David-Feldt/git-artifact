@@ -34,8 +34,45 @@ export interface RailNode {
 /** Vertical centre of a row, by index. Supplied by the caller from `rowOffsets`. */
 export type CenterOf = (index: number) => number
 
+/**
+ * Every rail in the graph, walked top to bottom.
+ *
+ * The walk carries one piece of state: which lanes have a rail coming *down into* the
+ * current row. That is the only honest way to draw an annotation row — a session header or
+ * a WIP node has no geometry of its own, so what crosses it is precisely what arrived from
+ * above, and nothing else.
+ *
+ * The alternative, asking the row below which lanes it uses, is what this replaced. It
+ * reads plausibly and is wrong on merges: a merge's edge list names the lane it *opens* for
+ * the branch it absorbed, and that lane has no history above the merge at all. Deriving
+ * from it hung a stub of rail above every merge with a band or a WIP node over it, pointing
+ * at nothing.
+ */
 export function railPaths(rows: DisplayRow[], y: CenterOf): RailPath[] {
-  return rows.flatMap((row, index) => rowPaths(row, rows[index + 1], y))
+  const paths: RailPath[] = []
+  let arriving: number[] = []
+
+  for (const row of rows) {
+    paths.push(...rowPaths(row, arriving, y))
+    arriving = departing(row, arriving)
+  }
+
+  return paths
+}
+
+/**
+ * Lanes carrying a rail out of this row and into the next one.
+ *
+ * For a commit that is its edge list read by destination: every edge is drawn from this
+ * row's centre to the next row's, so each one lands in the next row at its `toLane`. A
+ * truncated stub is deliberately absent — it stops halfway down and reaches nothing.
+ */
+function departing(row: DisplayRow, arriving: number[]): number[] {
+  if (row.kind === 'commit') return [...new Set(row.row.edges.map((edge) => edge.toLane))]
+  // Annotations pass through whatever reached them; a WIP node also runs its own dashed
+  // tail down into the commit it sits on.
+  if (row.kind === 'wip') return [...new Set([row.lane, ...arriving])]
+  return arriving
 }
 
 export function railNodes(rows: DisplayRow[], y: CenterOf): RailNode[] {
@@ -47,23 +84,17 @@ export function railNodes(rows: DisplayRow[], y: CenterOf): RailNode[] {
   return nodes
 }
 
-function rowPaths(row: DisplayRow, next: DisplayRow | undefined, y: CenterOf): RailPath[] {
+function rowPaths(row: DisplayRow, arriving: number[], y: CenterOf): RailPath[] {
   const y1 = y(row.index)
   const y2 = y(row.index + 1)
 
   /*
-   * A session header carries no graph geometry of its own. Every live lane runs straight
-   * through it, exactly as it does past a WIP node — the header is an annotation sitting
-   * beside the graph, not a node in it.
+   * A session header carries no graph geometry of its own. Every rail that reached it runs
+   * straight through, exactly as it does past a WIP node — the header is an annotation
+   * sitting beside the graph, not a node in it.
    */
   if (row.kind === 'session') {
-    const lanes = new Set<number>()
-    if (next?.kind === 'commit') {
-      lanes.add(next.row.lane)
-      for (const edge of next.row.edges) lanes.add(edge.fromLane)
-      for (const lane of next.row.incoming) lanes.add(lane)
-    }
-    return [...lanes].map((lane) => ({
+    return arriving.map((lane) => ({
       key: `${row.index}:s${lane}`,
       d: straight(laneX(lane), y1, y2),
       lane,
@@ -71,11 +102,10 @@ function rowPaths(row: DisplayRow, next: DisplayRow | undefined, y: CenterOf): R
     }))
   }
 
-  // A WIP row has no commit edges of its own. Every lane alive around it passes straight
+  // A WIP row has no commit edges of its own. Every rail that reached it passes straight
   // through, and its own lane runs down into the commit it is sitting on.
   if (row.kind === 'wip') {
-    const lanes = new Set<number>([row.lane])
-    if (next?.kind === 'commit') for (const edge of next.row.edges) lanes.add(edge.fromLane)
+    const lanes = new Set<number>([row.lane, ...arriving])
     return [...lanes].map((lane) => ({
       key: `${row.index}:w${lane}`,
       d: straight(laneX(lane), y1, y2),

@@ -1,6 +1,6 @@
 import type { SessionBandInfo } from '../../api.js'
-import { formatTokens, relativeTime, sessionEnded } from '../format.js'
-import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS, X_PATHS } from '../icons.js'
+import { formatTokens, relativeTime } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
 
 interface SessionHeaderProps {
   /**
@@ -12,10 +12,9 @@ interface SessionHeaderProps {
   /**
    * Epoch millis, shared by every row on a render so they agree on "now".
    *
-   * Whether a session has ended is a property of the clock rather than of the payload, so
-   * it is decided here and not on the wire. `App.tsx` re-ticks this every 20 s, which is
-   * what lets the mark appear on a session that goes quiet without a commit to trigger a
-   * refresh — nothing watches the transcript directory.
+   * Only the last-active time needs it. Whether the session is *running* is not a question
+   * about the clock — it comes off the payload, decided by the server against Claude Code's
+   * registry, and arrives on its own SSE push when it changes.
    */
   now: number
   /** Save this band alone, or absent while the graph is still settling. */
@@ -35,27 +34,29 @@ interface SessionHeaderProps {
  */
 export function SessionHeader({ session, now, onExport }: SessionHeaderProps) {
   const tokens = session.inputTokens + session.outputTokens
-  const ended = sessionEnded(session.endedAt, now)
 
   return (
     <div className="shead" title={sessionTooltip(session, now)}>
+      {/*
+       * The dot's column is always present, so every title on the graph starts at the same
+       * x whether or not its session is running. A gutter that collapses when empty would
+       * make the live band the one row that fails to line up with the rest.
+       */}
+      <span className="shead__live" aria-hidden={session.live === null ? true : undefined}>
+        {session.live !== null && (
+          <span
+            className="shead__live-dot"
+            role="img"
+            aria-label={liveLabel(session.live.status)}
+            title={liveLabel(session.live.status)}
+          />
+        )}
+      </span>
       {/*
        * Hidden from the accessibility tree: the title beside it already says what the row
        * is, so announcing an icon here would only repeat it.
        */}
       <Mark paths={MONITOR_PATHS} className="shead__mark" />
-      {ended && (
-        /*
-         * Labelled where the monitor is not. The monitor is decoration for a row whose
-         * title already names it; this one carries a fact that appears nowhere else in the
-         * row, so it has to survive being read rather than seen.
-         */
-        <Mark
-          paths={X_PATHS}
-          className="shead__mark shead__mark--ended"
-          label={`Ended — no activity for ${relativeTime(session.endedAt, now)}`}
-        />
-      )}
       <span className="shead__title">{session.title ?? 'Untitled session'}</span>
       <span className="shead__meta">
         {session.commitCount} commit{session.commitCount === 1 ? '' : 's'}
@@ -95,8 +96,30 @@ export function SessionHeader({ session, now, onExport }: SessionHeaderProps) {
           export
         </button>
       )}
+      {/*
+       * Last activity, in the right margin where a commit row puts its own relative time.
+       * Same column, same wording, so the two read as one convention rather than as a band
+       * inventing a second timestamp of its own.
+       *
+       * Shown on every band, live or not. It is the honest fact underneath the dot: the dot
+       * answers "is it running", this answers "when did anything last happen", and a dead
+       * session has only the second.
+       */}
+      <span className="shead__when">{relativeTime(session.endedAt, now)}</span>
     </div>
   )
+}
+
+/**
+ * Turn Claude Code's status word into something a stranger can read.
+ *
+ * Its vocabulary is internal and open-ended, so an unrecognised value is shown as-is rather
+ * than swallowed — a new status should degrade to a slightly odd tooltip, never to silence
+ * about a session that is plainly running.
+ */
+function liveLabel(status: string | null): string {
+  if (status === null) return 'Running now'
+  return `Running now — ${status}`
 }
 
 /**
@@ -149,15 +172,13 @@ function sessionTooltip(session: SessionBandInfo, now: number): string {
   lines.push(`${new Date(session.startedAt).toLocaleString()} — ${duration(session)}`)
   if (session.branches.length > 0) lines.push(`Branches: ${session.branches.join(', ')}`)
   /*
-   * Says what was measured, not just the verdict. The mark is an inference from a silent
-   * transcript, so the row it qualifies should show the reader the evidence and let them
-   * disagree with it.
+   * Two separate facts, kept separate. Whether a process is alive comes from the registry;
+   * when work last happened comes from the transcript. A session can easily be running and
+   * have been silent for an hour — that is a person thinking, and collapsing the two into
+   * one line would make it unsayable.
    */
-  lines.push(
-    sessionEnded(session.endedAt, now)
-      ? `Ended — no activity for ${relativeTime(session.endedAt, now)}`
-      : `Active — last activity ${relativeTime(session.endedAt, now)}`,
-  )
+  lines.push(session.live === null ? 'Not running' : liveLabel(session.live.status))
+  lines.push(`Last activity ${relativeTime(session.endedAt, now)}`)
   return lines.join('\n')
 }
 

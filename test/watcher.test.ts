@@ -85,6 +85,56 @@ describe('RepoWatcher', () => {
     expect(refs!.at).toBeLessThan(150)
   })
 
+  it('gives session events the widest window of the three', async () => {
+    /*
+     * Nobody is waiting on a session changing status, and a working session flips status
+     * every few seconds as it picks up and puts down tools. The window is there to coalesce
+     * that chatter, so it must be the loosest budget — the opposite end of the scale from
+     * refs, where the whole point is to be fast.
+     */
+    const repo = await openRepo(builders.linear!())
+    const seen: Array<{ kind: string; at: number }> = []
+    const start = Date.now()
+
+    const watcher = new RepoWatcher({
+      repo,
+      onChange: (kinds) => {
+        for (const kind of kinds) seen.push({ kind, at: Date.now() - start })
+      },
+    })
+    const queue = (kind: string) =>
+      (watcher as unknown as { queue: (k: string) => void }).queue(kind)
+
+    queue('refs')
+    queue('worktree')
+    queue('sessions')
+
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await watcher.close()
+
+    const at = (kind: string) => seen.find((s) => s.kind === kind)?.at
+    expect(at('sessions')).toBeDefined()
+    expect(at('sessions')!).toBeGreaterThan(at('worktree')!)
+    expect(at('worktree')!).toBeGreaterThan(at('refs')!)
+  })
+
+  it('watches nothing outside the repo unless handed a registry path', async () => {
+    /*
+     * The session registry lives in the home directory, which is the only path this project
+     * ever watches outside the repository — so it has to be opt-in and explicit. Absent the
+     * option, a `sessions` event cannot arise at all.
+     */
+    const repo = await openRepo(builders.linear!())
+    const watcher = new RepoWatcher({ repo, onChange: () => {} })
+    watcher.start()
+
+    const paths = (watcher as unknown as { watchers: Array<{ getWatched(): object }> }).watchers
+      .flatMap((w) => Object.keys(w.getWatched()))
+    await watcher.close()
+
+    expect(paths.every((p) => !p.includes(path.join('.claude', 'sessions')))).toBe(true)
+  })
+
   it('coalesces a burst into a single callback', async () => {
     const repo = await openRepo(builders.linear!())
     let calls = 0

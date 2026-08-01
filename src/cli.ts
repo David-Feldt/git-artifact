@@ -6,6 +6,7 @@ import { NotARepoError, openRepo } from './git/repo.js'
 import { generateToken } from './server/auth.js'
 import { startDaemon } from './server/index.js'
 import { GraphStore } from './server/store.js'
+import { sessionRegistryRoot } from './sources/claude-code.js'
 import { RepoWatcher } from './watch/watcher.js'
 
 /** Replaced by esbuild at build time; see scripts/build-server.mjs. */
@@ -175,11 +176,15 @@ async function main(): Promise<void> {
 
   const watcher = new RepoWatcher({
     repo: store.getRepo()!,
+    sessionRegistryPath: sessionRegistryRoot(),
     onChange: (kinds) => {
       // A ref change can also move the working tree (checkout, rebase), so status is
       // refreshed either way; the graph is only re-read when refs actually moved.
       if (kinds.has('refs')) void store.refreshGraph()
-      void store.refreshStatus()
+      // Nothing in the registry can move a ref or dirty a file, so this deliberately does
+      // not reach for either of the above — it re-reads which sessions are alive and stops.
+      if (kinds.has('sessions')) void store.refreshLiveness()
+      if (kinds.has('refs') || kinds.has('worktree')) void store.refreshStatus()
     },
     onError: (err) => {
       console.error(`git-artifact: watcher error: ${err instanceof Error ? err.message : err}`)

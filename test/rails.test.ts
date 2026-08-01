@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { assignLanes } from '../src/graph/lanes.js'
 import type { Commit, GraphRow } from '../src/graph/model.js'
-import { buildDisplayRows, ROW_HEIGHT, laneX } from '../src/client/components/layout.js'
+import { buildDisplayRows, ROW_HEIGHT, laneX, type DisplayRow } from '../src/client/components/layout.js'
 import { edgePath, railNodes, railPaths } from '../src/client/components/rail-paths.js'
 import type { WorktreeStatus } from '../src/api.js'
 
@@ -32,6 +32,26 @@ const y = (index: number) => index * ROW_HEIGHT + ROW_HEIGHT / 2
 
 const display = (commits: Commit[], worktrees: WorktreeStatus[] = []) =>
   buildDisplayRows(assignLanes(commits), worktrees)
+
+/** The same, with one session band over the given inclusive row range. */
+const withBand = (commits: Commit[], startRow: number, endRow: number) =>
+  buildDisplayRows(assignLanes(commits), [], [
+    {
+      sessionId: 's1',
+      title: 'A session',
+      startRow,
+      endRow,
+      commitCount: endRow - startRow + 1,
+      promptCount: 3,
+      inputTokens: 1000,
+      outputTokens: 100,
+      model: 'claude',
+      startedAt: 0,
+      endedAt: 60_000,
+      branches: ['main'],
+      live: null,
+    },
+  ])
 
 describe('railPaths', () => {
   it('draws a straight vertical rail down a linear history', () => {
@@ -153,28 +173,51 @@ describe('railNodes', () => {
   })
 
   it('gives a session header no node, because nothing happened on the graph there', () => {
-    const graphRows = assignLanes([c('b', 'a'), c('a')])
-    const rows = buildDisplayRows(graphRows, [], [
-      {
-        sessionId: 's1',
-        title: 'A session',
-        startRow: 0,
-        endRow: 1,
-        commitCount: 2,
-        promptCount: 3,
-        inputTokens: 1000,
-        outputTokens: 100,
-        model: 'claude',
-        startedAt: 0,
-        endedAt: 60_000,
-        branches: ['main'],
-      },
-    ])
+    const rows = withBand([c('b', 'a'), c('a')], 0, 1)
 
     expect(rows[0]!.kind).toBe('session')
     expect(railNodes(rows, y)).toHaveLength(2)
-    // The lanes below it still run through the header row.
-    expect(railPaths(rows, y).some((p) => p.key.startsWith('0:s'))).toBe(true)
+  })
+
+  it('runs a live lane straight through a session header', () => {
+    // A header mid-history: the rail above it continues past, or the branch it belongs to
+    // would look like it ended at an annotation.
+    const rows = withBand([c('c', 'b'), c('b', 'a'), c('a')], 1, 2)
+
+    expect(rows[1]!.kind).toBe('session')
+    const through = railPaths(rows, y).filter((p) => p.key.startsWith('1:s'))
+    expect(through).toHaveLength(1)
+    expect(through[0]!.d).toBe(`M ${laneX(0)} ${y(1)} L ${laneX(0)} ${y(2)}`)
+  })
+
+  it('draws nothing above the newest commit when a band opens the graph', () => {
+    // Nothing arrives from above the first row, so a header there has no rail to continue.
+    // Drawing one would put a stub over the newest commit pointing at history that is not
+    // in the window and, at the tip of a branch, does not exist at all.
+    const rows = withBand([c('b', 'a'), c('a')], 0, 1)
+    expect(railPaths(rows, y).filter((p) => p.key.startsWith('0:s'))).toEqual([])
+  })
+
+  it('leaves no rail above a merge in the lane that merge opens', () => {
+    /*
+     * The regression this file exists to catch now.
+     *
+     * A merge's edge list names the lane it opens for the branch it absorbed. That lane has
+     * no history above the merge — it begins there and runs downward — so an annotation row
+     * above it must not continue it. Deriving the through-lanes from the row below made
+     * exactly that mistake, hanging a stub of rail over every merge with a band on it.
+     */
+    const merge = [c('tip', 'm'), c('m', 'main1', 'side1'), c('side1', 'main1'), c('main1')]
+    const rows = withBand(merge, 1, 3)
+
+    const mergeRow = rows.find((r) => r.kind === 'commit' && r.row.commit.sha === 'm')!
+    const opened = (mergeRow as Extract<DisplayRow, { kind: 'commit' }>).row.edges
+      .find((e) => e.kind === 'merge')!.toLane
+    expect(opened).toBe(1)
+
+    // Every rail drawn above the merge row belongs to a lane that existed above it.
+    const aboveMerge = railPaths(rows, y).filter((p) => p.d.includes(`${y(1)} L`))
+    expect(aboveMerge.map((p) => p.lane)).toEqual([0])
   })
 
   it('keys nodes uniquely across the whole graph', () => {

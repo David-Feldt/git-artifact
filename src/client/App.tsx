@@ -7,6 +7,7 @@ import { ExportControls } from './components/ExportControls.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import { SessionHeader } from './components/SessionHeader.js'
+import { SessionStrip } from './components/SessionStrip.js'
 import { ViewTabs } from './components/ViewTabs.js'
 import {
   DETAIL_HEIGHT,
@@ -61,8 +62,23 @@ export function App() {
   const view = views.length === 0 ? null : selectView(views, activeView)
   const vgraph = view?.graph ?? null
 
+  /*
+   * No sessions in the graph. They live in the strip above it now.
+   *
+   * A band claimed a contiguous run of commits, which required knowing which session
+   * produced which commit — and that is inferred from timing, so with two sessions running
+   * at once it is close to a coin flip. Worse, the band could not represent the overlap even
+   * when it guessed right: one commit gets exactly one owner, so concurrent work rendered as
+   * tidy sequential blocks and the picture came out cleaner than the truth.
+   *
+   * Passing no sessions here rather than deleting the machinery: `buildDisplayRows` already
+   * takes them as a parameter, so this switches the whole thing off — the header rows, the
+   * extent rails, and the band export, which all self-disable when no session row exists.
+   * The dead code comes out in its own change, when the files it lives in are not being
+   * edited by another session.
+   */
   const rows = useMemo(
-    () => buildDisplayRows(vgraph?.rows ?? [], view?.statuses ?? [], vgraph?.sessions ?? []),
+    () => buildDisplayRows(vgraph?.rows ?? [], view?.statuses ?? [], []),
     [vgraph, view],
   )
   /*
@@ -102,28 +118,18 @@ export function App() {
   const [exportError, setExportError] = useState<string | null>(null)
 
   /**
-   * Open a commit's generated page in its own window.
+   * Where a commit's generated page lives.
    *
-   * `window.open` and nothing else, deliberately. A popup opened after an `await` has lost
-   * the user gesture that permits it and is blocked, so the window is opened immediately
-   * and the daemon serves it a shell that starts the work and polls itself.
+   * A plain URL handed to an anchor, rather than anything this component opens itself. The
+   * daemon answers it with a shell that kicks off generation and polls itself, so the tab
+   * has something to render from the first frame — that part is unchanged, and is why the
+   * link can be followed the instant it is clicked rather than after an await.
    *
-   * Named per sha, so asking twice focuses the window already open on that commit rather
-   * than stacking a second one over it.
+   * No token in the query. The session cookie is `SameSite=Strict` on this origin and a
+   * same-origin navigation carries it, so the URL stays free of a credential that would
+   * otherwise end up in a bookmark or pasted into a chat.
    */
-  const explain = useCallback((sha: string) => {
-    const opened = window.open(
-      `/artifact?sha=${encodeURIComponent(sha)}`,
-      `git-artifact-${sha}`,
-      'popup,width=940,height=900,noopener=no',
-    )
-    setExportError(
-      opened === null
-        ? 'Your browser blocked the popup. Allow popups for this page and try again.'
-        : null,
-    )
-    opened?.focus()
-  }, [])
+  const artifactHref = (sha: string) => `/artifact?sha=${encodeURIComponent(sha)}`
 
   /**
    * Save one band's commits, rather than the whole graph.
@@ -226,6 +232,11 @@ export function App() {
         statuses={status?.worktrees ?? []}
         onSelect={selectViewKey}
       />
+
+      {/* Unscoped `graph`, not the tab's `vgraph`: a session is not a property of a
+          worktree's slice of history, and filtering the strip by the active tab would
+          imply a relationship to those commits that is exactly what this drops. */}
+      {graph && <SessionStrip sessions={graph.sessions} now={now} />}
 
       <div className="banners">
         {graph && <StateBanners repo={graph.repo} capped={graph.capped} maxCount={graph.maxCount} />}
@@ -338,7 +349,7 @@ export function App() {
                     error={detail.error}
                     lane={expanded.lane}
                     onClose={close}
-                    onExplain={() => explain(expanded.sha)}
+                    artifactHref={artifactHref(expanded.sha)}
                   />
                 </div>
               )}

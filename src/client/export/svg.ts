@@ -11,8 +11,8 @@ import {
   sessionSpan,
 } from '../components/layout.js'
 import { railNodes, railPaths } from '../components/rail-paths.js'
-import { basename, formatTokens, heatBucket, relativeTime, sessionEnded } from '../format.js'
-import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS, X_PATHS } from '../icons.js'
+import { basename, formatTokens, heatBucket, relativeTime } from '../format.js'
+import { ICON_STROKE, ICON_VIEWBOX, MONITOR_PATHS } from '../icons.js'
 import {
   CARD,
   INK,
@@ -112,14 +112,8 @@ const MIN_REF_WIDTH = 34
 const MIN_RULE = 40
 /** Side of the icon opening a session band. Matches `.shead__mark` in `theme.css`. */
 const MARK_SIZE = 14
-/**
- * The ended mark that follows it, and the space before it. Both match
- * `.shead__mark--ended`, where the size is 11px and the negative margin pulls the icon
- * inside the row's 9px flex gap to leave 4px. It sits closer than anything else in the row
- * because it modifies the monitor rather than standing beside it.
- */
-const ENDED_MARK_SIZE = 11
-const ENDED_MARK_GAP = 4
+/** Floor for the last-active column, mirroring `min-width` on `.shead__when`. */
+const WHEN_MIN_WIDTH = 26
 /**
  * Slack on chip text, absorbing the gap between the font measured and the font drawn.
  *
@@ -506,24 +500,25 @@ function renderSessionRow(
   // heat, so a band gets weight and position only.
   out.push(icon(MONITOR_PATHS, left, mid - MARK_SIZE / 2, MARK_SIZE, INK_SECONDARY))
 
-  let x = left + MARK_SIZE
+  let x = left + MARK_SIZE + GAP
 
   /*
-   * The ended mark, placed against the monitor exactly as `.shead__mark--ended` places it.
+   * The running-now dot is deliberately *not* drawn here, and this is the one place the
+   * export departs from the screen on purpose rather than by drift.
    *
-   * Frozen at export time rather than at reading time, which is the only honest thing a
-   * static file can do: it records what was true when the picture was taken, and the header
-   * already stamps the file with when that was. `--ink-muted` for the same reason it is
-   * muted on screen — almost every band in a finished history carries this mark.
+   * A dot meaning "this session is alive" is true for as long as it takes to save the file.
+   * On screen it is re-pushed the moment the registry changes; in an SVG forwarded to
+   * somebody next week it is simply a false statement, and the reader has nothing to check
+   * it against. The last-active time below survives the trip because it is a measurement,
+   * and the header stamps the file with the moment it was taken.
    */
-  if (sessionEnded(session.endedAt, now)) {
-    out.push(
-      icon(X_PATHS, x + ENDED_MARK_GAP, mid - ENDED_MARK_SIZE / 2, ENDED_MARK_SIZE, INK_MUTED),
-    )
-    x += ENDED_MARK_GAP + ENDED_MARK_SIZE
-  }
 
-  x += GAP
+  /*
+   * Last activity, in the right margin, matching `.shead__when`. Reserved before the meta
+   * is fitted so a long token count shortens itself rather than colliding with it.
+   */
+  const when = relativeTime(session.endedAt, now)
+  const whenWidth = Math.max(measure(when, FONT.sessionMeta), WHEN_MIN_WIDTH) + GAP
 
   const title = fit(session.title ?? 'Untitled session', 320, FONT.sessionTitle, measure)
   out.push(text(x, mid, title.text, FONT.sessionTitle, INK))
@@ -544,7 +539,12 @@ function renderSessionRow(
   const multi = session.branches.length > 1 ? `${session.branches.length} branches` : null
   const multiWidth = multi === null ? 0 : measure(multi, FONT.smallChip) + 12 + GAP
 
-  const meta = fit(parts.join(' · '), right - x - multiWidth - MIN_RULE, FONT.sessionMeta, measure)
+  const meta = fit(
+    parts.join(' · '),
+    right - x - multiWidth - whenWidth - MIN_RULE,
+    FONT.sessionMeta,
+    measure,
+  )
   out.push(text(x, mid, meta.text, FONT.sessionMeta, INK_MUTED))
   x += measure(meta.text, FONT.sessionMeta) + GAP
 
@@ -558,7 +558,13 @@ function renderSessionRow(
     x += chip.width + GAP
   }
 
-  if (x < right) out.push(line(x, mid, right, mid, RULE))
+  // Right-aligned against the card edge, so the column of times is straight down the page
+  // whatever the strings measure — the same thing `tabular-nums` buys on screen.
+  const whenX = right - measure(when, FONT.sessionMeta)
+  out.push(text(whenX, mid, when, FONT.sessionMeta, INK_MUTED))
+
+  const ruleEnd = whenX - GAP
+  if (x < ruleEnd) out.push(line(x, mid, ruleEnd, mid, RULE))
   return out
 }
 

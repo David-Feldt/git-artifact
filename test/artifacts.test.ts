@@ -180,6 +180,7 @@ describe('the brief', () => {
     startedAt: 0,
     endedAt: 1000,
     branches: ['main'],
+    live: null,
   }
 
   it('tells the model that attribution is inferred, not recorded', () => {

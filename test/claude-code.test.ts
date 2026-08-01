@@ -6,6 +6,7 @@ import {
   clearSessionCache,
   escapeProjectPath,
   readSession,
+  readLiveSessions,
   readSessionsForRepo,
 } from '../src/sources/claude-code.js'
 
@@ -244,5 +245,78 @@ describe('readSessionsForRepo', () => {
 
     const sessions = await readSessionsForRepo([repo], { home })
     expect(sessions.map((s) => path.basename(s.file))).toEqual(['early.jsonl', 'late.jsonl'])
+  })
+})
+
+describe('readLiveSessions', () => {
+  /**
+   * Unlike everything above, this is not inference — a registry entry names a pid, and a
+   * pid either exists or it does not. So the tests are about trusting it exactly as far as
+   * it deserves: an entry alone proves nothing, an entry with a living process proves
+   * everything.
+   */
+
+  /** Write a registry entry as Claude Code writes them. */
+  function writeEntry(home: string, pid: number, fields: Record<string, unknown> = {}): void {
+    const dir = path.join(home, '.claude', 'sessions')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      path.join(dir, `${pid}.json`),
+      JSON.stringify({ pid, sessionId: `s-${pid}`, status: 'idle', ...fields }),
+    )
+  }
+
+  /**
+   * A pid that is certainly not running.
+   *
+   * Picked above the default `pid_max` on both platforms rather than by allocating and
+   * killing a process, which would race: the kernel is free to hand the number straight to
+   * somebody else, and the test would then flake as a *pass* on some other program.
+   */
+  const DEAD_PID = 4_000_000
+
+  it('reports a session whose process is alive', async () => {
+    const home = fakeHome()
+    writeEntry(home, process.pid, { sessionId: 'mine', status: 'busy' })
+
+    const live = await readLiveSessions({ home })
+    expect(live.get('mine')).toEqual({ sessionId: 'mine', pid: process.pid, status: 'busy' })
+  })
+
+  it('ignores an entry whose process is gone', async () => {
+    // The reason the file alone is not the signal: a session that dies without cleaning up
+    // leaves one behind, and trusting it would light up a band forever.
+    const home = fakeHome()
+    writeEntry(home, DEAD_PID, { sessionId: 'stale' })
+
+    expect(await readLiveSessions({ home })).toEqual(new Map())
+  })
+
+  it('passes an unrecognised status through instead of dropping it', async () => {
+    // Claude Code's vocabulary is internal and open-ended. A status we have never seen is a
+    // session that is plainly running, and must not be silently demoted to dead.
+    const home = fakeHome()
+    writeEntry(home, process.pid, { sessionId: 'mine', status: 'refactoring-the-universe' })
+
+    expect((await readLiveSessions({ home })).get('mine')?.status).toBe('refactoring-the-universe')
+  })
+
+  it('survives entries it cannot use', async () => {
+    const home = fakeHome()
+    const dir = path.join(home, '.claude', 'sessions')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 'broken.json'), '{ not json')
+    writeFileSync(path.join(dir, 'nopid.json'), JSON.stringify({ sessionId: 'x' }))
+    writeFileSync(path.join(dir, 'nosession.json'), JSON.stringify({ pid: process.pid }))
+    writeFileSync(path.join(dir, 'notes.txt'), 'ignored')
+    writeEntry(home, process.pid, { sessionId: 'good' })
+
+    // One bad file must not cost the others. Tier B degrades per entry, not wholesale.
+    expect([...(await readLiveSessions({ home })).keys()]).toEqual(['good'])
+  })
+
+  it('returns nothing when there is no registry at all', async () => {
+    // Claude Code absent, or a version predating the registry. Neither is an error.
+    expect(await readLiveSessions({ home: fakeHome() })).toEqual(new Map())
   })
 })

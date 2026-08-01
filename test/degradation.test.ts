@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -8,6 +8,7 @@ import { readLog } from '../src/git/log.js'
 import { readStatus } from '../src/git/status.js'
 import { assignLanes } from '../src/graph/lanes.js'
 import { GraphStore } from '../src/server/store.js'
+import { escapeProjectPath } from '../src/sources/claude-code.js'
 import { builders, cleanupAll } from './fixtures/make.js'
 
 /**
@@ -179,5 +180,124 @@ describe('GraphStore', () => {
     await store.refreshGraph()
     expect(store.getGraph()!.rows.length).toBe(before + 1)
     expect(store.getGraph()!.rows[0]!.commit.subject).toBe('later')
+  })
+})
+
+/**
+ * Liveness, joined onto the bands.
+ *
+ * The one fact on a band that is not inferred, so it gets its own coverage: a registry
+ * entry with a living process, against a fixture repo whose commit times are pinned so the
+ * transcript can be made to line up with them.
+ */
+describe('GraphStore liveness', () => {
+  const homes: string[] = []
+  afterAll(() => {
+    for (const home of homes) rmSync(home, { recursive: true, force: true })
+    cleanupAll()
+  })
+
+  /** Matches `BASE_TIME` in `fixtures/make.ts`, which pins every fixture commit. */
+  const BASE_MS = 1_700_000_000 * 1000
+
+  function fakeHome(dir: string, sessionId: string, live: boolean): string {
+    const home = mkdtempSync(path.join(tmpdir(), 'ga-store-home-'))
+    homes.push(home)
+
+    /*
+     * The *resolved* path, because that is what the store joins on. On macOS `tmpdir()`
+     * hands back `/var/...`, a symlink to `/private/var/...`, and git reports the latter —
+     * so a fixture keyed on the unresolved path silently matches nothing and every band
+     * disappears rather than failing loudly.
+     */
+    const repoDir = realpathSync(dir)
+
+    // A transcript whose activity brackets the fixture's commits, so attribution claims
+    // them. Escaping the repo path is what puts it where the source will look.
+    const projects = path.join(home, '.claude', 'projects', escapeProjectPath(repoDir))
+    mkdirSync(projects, { recursive: true })
+    writeFileSync(
+      path.join(projects, `${sessionId}.jsonl`),
+      [-60, 0, 60, 120, 180]
+        .map((offset) =>
+          JSON.stringify({
+            type: 'user',
+            sessionId,
+            cwd: repoDir,
+            timestamp: new Date(BASE_MS + offset * 1000).toISOString(),
+            message: { content: 'do the thing' },
+          }),
+        )
+        .join('\n') + '\n',
+    )
+
+    if (live) {
+      const sessions = path.join(home, '.claude', 'sessions')
+      mkdirSync(sessions, { recursive: true })
+      writeFileSync(
+        path.join(sessions, `${process.pid}.json`),
+        JSON.stringify({ pid: process.pid, sessionId, status: 'busy' }),
+      )
+    }
+    return home
+  }
+
+  it('marks a band whose session is running, and only that one', async () => {
+    const dir = builders.linear!()
+    const store = new GraphStore(dir, {
+      maxCount: 5000,
+      claudeHome: fakeHome(dir, 'running', true),
+    })
+    await store.init()
+
+    const bands = store.getGraph()!.sessions
+    expect(bands.length).toBeGreaterThan(0)
+    expect(bands.every((b) => b.live?.status === 'busy')).toBe(true)
+  })
+
+  it('leaves a band unmarked when no process backs its session', async () => {
+    // The transcript is identical; only the registry entry is missing. That is the whole
+    // difference between "this ran once" and "this is running".
+    const dir = builders.linear!()
+    const store = new GraphStore(dir, {
+      maxCount: 5000,
+      claudeHome: fakeHome(dir, 'finished', false),
+    })
+    await store.init()
+
+    const bands = store.getGraph()!.sessions
+    expect(bands.length).toBeGreaterThan(0)
+    expect(bands.every((b) => b.live === null)).toBe(true)
+  })
+
+  it('publishes a liveness change, and stays silent when nothing changed', async () => {
+    /*
+     * The registry is written on every status flip, and a working session flips constantly.
+     * Re-emitting the graph for a write that changed no band would re-render the client's
+     * whole tree on a timer it does not control.
+     */
+    const dir = builders.linear!()
+    const home = fakeHome(dir, 'running', true)
+    const store = new GraphStore(dir, { maxCount: 5000, claudeHome: home })
+    await store.init()
+
+    let emitted = 0
+    store.on('event', (event: { type: string }) => {
+      if (event.type === 'graph') emitted += 1
+    })
+
+    await store.refreshLiveness()
+    expect(emitted).toBe(0)
+
+    // The session exits: its registry entry goes, and the bands must stop claiming it.
+    rmSync(path.join(home, '.claude', 'sessions'), { recursive: true, force: true })
+    await store.refreshLiveness()
+
+    expect(emitted).toBe(1)
+    expect(store.getGraph()!.sessions.every((b) => b.live === null)).toBe(true)
+
+    // Already reflected, so a second pass has nothing to say.
+    await store.refreshLiveness()
+    expect(emitted).toBe(1)
   })
 })

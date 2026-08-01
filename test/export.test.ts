@@ -7,8 +7,10 @@ import type { GraphPayload, SessionBandInfo, WorktreeStatus } from '../src/api.j
 import { buildDisplayRows, sessionSpan, sliceRows } from '../src/client/components/layout.js'
 import { HEAT_HEX, LANE_HEX, PAPER, laneHex, mix } from '../src/client/export/palette.js'
 import { exportFilename } from '../src/client/export/download.js'
-import { ICON_VIEWBOX, MONITOR_PATHS, X_PATHS } from '../src/client/icons.js'
-import { DEFAULT_IDLE_LIMIT_MS } from '../src/sessions/attribute.js'
+import { ICON_VIEWBOX, MONITOR_PATHS } from '../src/client/icons.js'
+
+/** `--live` from `theme.css`. Asserted as absent from exports; see the band test below. */
+const LIVE_HEX = '#008300'
 import { fit, renderGraphSvg, type Font, type Measure } from '../src/client/export/svg.js'
 
 /**
@@ -143,6 +145,7 @@ describe('renderGraphSvg', () => {
       startedAt: Date.UTC(2026, 7, 1, 10, 0),
       endedAt: Date.UTC(2026, 7, 1, 11, 0),
       branches: ['main', 'feature'],
+      live: null,
     }
     const graph = payload([c('b2', 'second', 'a1'), c('a1', 'first')], { sessions: [session] })
     const svg = render(graph)
@@ -175,6 +178,7 @@ describe('renderGraphSvg', () => {
       startedAt: Date.UTC(2026, 7, 1, 10, 0),
       endedAt: Date.UTC(2026, 7, 1, 11, 0),
       branches: ['main'],
+      live: null,
     }
     const svg = render(payload([c('a1', 'first')], { sessions: [session] }))
 
@@ -183,13 +187,7 @@ describe('renderGraphSvg', () => {
     expect(svg).toContain(`scale(${Math.round((14 / ICON_VIEWBOX) * 100) / 100})`)
   })
 
-  it('marks a session that has stopped, and only once it has', () => {
-    /*
-     * The one thing on a band that is not read off the payload: it is inferred from the
-     * clock, so the same session renders two ways. Both directions matter and the false
-     * positive is the expensive one — a mark on a session that is still working is a
-     * statement the picture makes and cannot take back.
-     */
+  it('dates a band by its last activity, and never claims it is running', () => {
     const session: SessionBandInfo = {
       sessionId: 's1',
       title: 'Understand background changes',
@@ -203,32 +201,36 @@ describe('renderGraphSvg', () => {
       startedAt: Date.UTC(2026, 7, 1, 10, 0),
       endedAt: Date.UTC(2026, 7, 1, 11, 0),
       branches: ['main'],
+      live: { status: 'busy' },
     }
     const graph = payload([c('a1', 'first')], { sessions: [session] })
-    const at = (now: number) =>
-      renderGraphSvg(
-        { graph, rows: buildDisplayRows(graph.rows, [], graph.sessions), now },
-        { measure },
-      )
-    const hasMark = (svg: string) => X_PATHS.every((d) => svg.includes(`<path d="${d}"/>`))
-
-    expect(hasMark(at(session.endedAt + DEFAULT_IDLE_LIMIT_MS + 1))).toBe(true)
-    // Idle but inside the window: still working as far as anyone can tell.
-    expect(hasMark(at(session.endedAt + DEFAULT_IDLE_LIMIT_MS - 1))).toBe(false)
-    // Clock skew and a sleeping machine both put the last record in the future. Marking
-    // that as ended would be arithmetic on a negative gap, not an observation.
-    expect(hasMark(at(session.endedAt - 60_000))).toBe(false)
-
-    // Drawn at the 11px `.shead__mark--ended` sets, not at the monitor's 14.
-    expect(at(session.endedAt + DEFAULT_IDLE_LIMIT_MS + 1)).toContain(
-      `scale(${Math.round((11 / ICON_VIEWBOX) * 100) / 100})`,
+    const svg = renderGraphSvg(
+      {
+        graph,
+        rows: buildDisplayRows(graph.rows, [], graph.sessions),
+        now: session.endedAt + 2 * 60 * 60 * 1000,
+      },
+      { measure },
     )
+
+    // The measurement, in the margin, in the same words a commit row uses.
+    expect(svg).toContain('>2h<')
+
+    /*
+     * Liveness is deliberately absent. On screen a dot says "running right now" and is
+     * re-pushed the moment that stops being true; a file forwarded next week has no such
+     * correction available, so the export carries only what stays true — see the note in
+     * `renderSessionRow`. This asserts the omission, because a later change that "fixed the
+     * inconsistency" by drawing it would be a regression, not a fix.
+     */
+    expect(svg).not.toContain('busy')
+    expect(svg).not.toContain(LIVE_HEX)
   })
 
-  it('keeps a marked band inside the card it is drawn in', () => {
+  it('keeps a dated band inside the card it is drawn in', () => {
     /*
-     * The mark pushes the title, the meta and the rule rightwards, so the row it produces is
-     * the widest a band gets. Exercised at the width where the fitting has least slack.
+     * The margin timestamp shortens the rule and squeezes the meta, so this is the widest a
+     * band's contents get. Exercised at the width where the fitting has least slack.
      */
     const session: SessionBandInfo = {
       sessionId: 's1',
@@ -243,13 +245,14 @@ describe('renderGraphSvg', () => {
       startedAt: Date.UTC(2026, 7, 1, 10, 0),
       endedAt: Date.UTC(2026, 7, 1, 11, 0),
       branches: ['main', 'feature', 'third'],
+      live: null,
     }
     const graph = payload([c('a1', 'first')], { sessions: [session] })
     const svg = renderGraphSvg(
       {
         graph,
         rows: buildDisplayRows(graph.rows, [], graph.sessions),
-        now: session.endedAt + DEFAULT_IDLE_LIMIT_MS + 1,
+        now: session.endedAt + 40 * 24 * 60 * 60 * 1000,
       },
       { measure },
     )
@@ -364,6 +367,7 @@ describe('scoped export', () => {
     startedAt: 0,
     endedAt: 60_000,
     branches: ['main'],
+    live: null,
   }
 
   const scoped = () => {

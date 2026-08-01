@@ -6,8 +6,6 @@
  * — so they live here, free of JSX, and are imported by both.
  */
 
-import { DEFAULT_IDLE_LIMIT_MS } from '../sessions/attribute.js'
-
 /**
  * Compact relative time.
  *
@@ -56,32 +54,6 @@ export function heatBucket(heat: number): 0 | 1 | 2 | 3 | 4 {
   if (heat >= 0.2) return 2
   if (heat >= 0.05) return 1
   return 0
-}
-
-/**
- * Whether a session has stopped.
- *
- * This is inference, like attribution itself. What is actually known is that nothing has
- * been appended to the transcript for a while — Claude Code writes a record on every turn,
- * and commits were measured landing within 0.4 minutes of session activity, so a gap this
- * wide means the session is over rather than merely thinking. It cannot tell an exited
- * session from a crashed one, and it never asks whether a process is running.
- *
- * The window is `DEFAULT_IDLE_LIMIT_MS` deliberately, not coincidentally: a session too
- * idle to be credited with the commit in front of it is the same session this calls ended.
- * Two separately-tuned numbers would eventually disagree about one session, and the band
- * would then claim a commit it was simultaneously marked too dead to have made.
- *
- * The import reaches outside `src/client`, which only `api.ts` otherwise does.
- * `sessions/attribute.ts` is pure and dependency-free by contract, so it bundles as the one
- * constant rather than dragging server code into the browser.
- *
- * Clock skew and a machine asleep both produce a future `endedAt`; those count as running.
- * That is the conservative direction — a missing mark is unremarkable, and a mark on a
- * session that is still working is a visible lie.
- */
-export function sessionEnded(endedAt: number, now: number): boolean {
-  return now - endedAt > DEFAULT_IDLE_LIMIT_MS
 }
 
 export function basename(filePath: string): string {

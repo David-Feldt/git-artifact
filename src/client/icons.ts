@@ -31,15 +31,6 @@ export const MONITOR_PATHS: readonly string[] = [
 ]
 
 /**
- * Lucide `x`. Marks a session with no recent transcript activity.
- *
- * Two strokes and nothing else, which is what makes it legible beside the monitor at 14px
- * where a glyph with interior detail — a circled cross, a power symbol — turns to mush. It
- * reads as a state on the icon it follows rather than as a second subject.
- */
-export const X_PATHS: readonly string[] = ['M18 6 6 18', 'm6 6 12 12']
-
-/**
  * Lucide `chart-network`. Marks generating an artifact.
  *
  * Three nodes joined by edges over an axis — the same thing the graph beside it draws, and
@@ -58,4 +49,17 @@ export const CHART_NETWORK_PATHS: readonly string[] = [
   'M10 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0z',
   'M14 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0z',
   'M7 15a2 2 0 1 0 4 0a2 2 0 1 0-4 0z',
+]
+
+/**
+ * Lucide `git-branch`. Marks a branch name.
+ *
+ * Its two `<circle>` elements are rewritten as two-arc subpaths, for the reason above.
+ * Verified the same way: rasterised against the upstream file at 16×, the converted form
+ * is pixel-identical — zero differing pixels of 147,456, maximum channel delta 0.
+ */
+export const GIT_BRANCH_PATHS: readonly string[] = [
+  'M15 6a9 9 0 0 0-9 9V3',
+  'M15 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0z',
+  'M3 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0z',
 ]
