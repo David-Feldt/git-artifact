@@ -3,6 +3,7 @@ import type { DisplayRow } from './layout.js'
 import {
   LANE_WIDTH,
   ROW_HEIGHT,
+  bodyHeight,
   gutterWidth,
   laneColor,
   laneX,
@@ -13,6 +14,8 @@ import {
 interface RailsProps {
   rows: DisplayRow[]
   width: number
+  /** Row with its detail panel open, whose rails must stretch across the gap. Or null. */
+  expandedIndex: number | null
 }
 
 /**
@@ -20,12 +23,16 @@ interface RailsProps {
  *
  * SVG for the graph, HTML for the text. Text in SVG loses selection, wrapping and
  * subpixel hinting for nothing in return, and the rails need real curves that CSS borders
- * cannot draw. Keeping them in separate layers means each does what it is good at, and
- * the fixed row height keeps the two in lockstep.
+ * cannot draw. Keeping them in separate layers means each does what it is good at.
+ *
+ * Both layers read their vertical geometry from the same offsets array, which is what
+ * keeps them in lockstep now that rows are neither uniform in height (session headers are
+ * shorter) nor evenly spaced (an open panel injects a gap). A rail crossing the panel gap
+ * stretches to span it, because the offsets already account for it — no special case here.
  */
-export function Rails({ rows, width }: RailsProps) {
-  const offsets = rowOffsets(rows)
-  const height = offsets[rows.length] ?? 0
+export function Rails({ rows, width, expandedIndex }: RailsProps) {
+  const offsets = rowOffsets(rows, expandedIndex)
+  const height = bodyHeight(offsets)
   const y = (index: number) => rowCenter(rows, offsets, index)
 
   return (
@@ -146,7 +153,8 @@ function renderEdges(row: DisplayRow, next: DisplayRow | undefined, y: CenterOf)
  * The control points sit on the vertical through each endpoint, so the curve leaves and
  * arrives travelling straight down — branches merge into a rail tangentially instead of
  * meeting it at a corner. The horizontal clamp keeps a jump across many lanes from
- * bulging into its neighbours.
+ * bulging into its neighbours, and also stops a curve crossing an open detail panel from
+ * bowing halfway across the gutter.
  */
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   if (x1 === x2) return `M ${x1} ${y1} L ${x2} ${y2}`

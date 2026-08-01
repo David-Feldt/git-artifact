@@ -1,22 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RepoInfo } from '../api.js'
 import { CommitCard } from './components/CommitCard.js'
+import { CommitDetailPanel } from './components/CommitDetail.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
 import { SessionHeader } from './components/SessionHeader.js'
 import { WorktreeStrip } from './components/WorktreeStrip.js'
 import {
+  DETAIL_HEIGHT,
   GUTTER_PAD,
-  ROW_HEIGHT,
+  bodyHeight,
   buildDisplayRows,
+  detailTop,
   gutterWidth,
   rowHeight,
   rowOffsets,
+  rowTop,
 } from './components/layout.js'
+import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
 
 export function App() {
   const { graph, status, problem, connection, fatal } = useGraphStream()
+  const [selected, setSelected] = useState<string | null>(null)
 
   // One clock for the whole render, ticking slowly. Every row would otherwise call
   // Date.now() independently and disagree, and a fast tick would rerender the tree for
@@ -31,9 +37,48 @@ export function App() {
     () => buildDisplayRows(graph?.rows ?? [], status?.worktrees ?? [], graph?.sessions ?? []),
     [graph, status],
   )
-  // Rows are no longer a uniform height, so positions come from here rather than from
-  // multiplying an index. Both the SVG rails and the HTML cards read the same array.
-  const offsets = useMemo(() => rowOffsets(rows), [rows])
+  /*
+   * The open panel is tracked by sha, not by row index, and the index is re-derived on
+   * every render. Rows move under you constantly here — a commit, a rebase, or a WIP node
+   * appearing all reindex the list — and an index would silently come to mean a different
+   * commit. A sha that is no longer in the graph resolves to no row, which closes the
+   * panel on its own.
+   */
+  const expanded = useMemo(() => {
+    if (selected === null) return null
+    const index = rows.findIndex(
+      (row) => row.kind === 'commit' && row.row.commit.sha === selected,
+    )
+    const row = index === -1 ? undefined : rows[index]
+    return row?.kind === 'commit' ? { index, lane: row.row.lane, sha: selected } : null
+  }, [rows, selected])
+
+  /*
+   * Vertical geometry, computed once and shared by every layer that needs it — the SVG
+   * rails, the HTML rows, the detail panel, and the session extent bars.
+   *
+   * It has to come after `expanded`, because a row's position depends on two things that
+   * are not `index * ROW_HEIGHT`: session headers are shorter than commit rows, and an
+   * open panel injects a gap beneath its row. Deriving those separately in each layer is
+   * how the SVG and the HTML drift apart by a few pixels and it reads as a rendering bug.
+   */
+  const offsets = useMemo(
+    () => rowOffsets(rows, expanded?.index ?? null),
+    [rows, expanded],
+  )
+
+  const detail = useCommitDetail(expanded?.sha ?? null)
+
+  const close = useCallback(() => setSelected(null), [])
+
+  useEffect(() => {
+    if (expanded === null) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [expanded, close])
 
   useEffect(() => {
     document.title = graph ? `${graph.repo.name} · git-artifact` : 'git-artifact'
@@ -45,9 +90,9 @@ export function App() {
   /**
    * Scroll a worktree's HEAD into view.
    *
-   * Row positions are computed rather than measured — every row is exactly one
-   * ROW_HEIGHT, which is the same property that makes virtualisation drop in later — so
-   * this needs no DOM query and stays correct while the list is still rendering.
+   * Positions come from the shared offsets array rather than from measuring the DOM, so
+   * this stays correct while the list is still rendering — and, unlike multiplying an
+   * index, it stays correct when a session header or an open panel sits above the target.
    */
   const revealSha = useCallback(
     (sha: string) => {
@@ -57,11 +102,11 @@ export function App() {
       scrollRef.current?.scrollTo({
         // Bias upward so the target lands a third of the way down rather than at the very
         // top, where its surrounding history would be cut off.
-        top: Math.max(0, index * ROW_HEIGHT - (scrollRef.current.clientHeight ?? 0) / 3),
+        top: Math.max(0, rowTop(offsets, index) - (scrollRef.current.clientHeight ?? 0) / 3),
         behavior: 'smooth',
       })
     },
-    [rows],
+    [rows, offsets],
   )
 
   if (fatal) {
@@ -124,10 +169,12 @@ export function App() {
           <EmptyState repo={graph.repo} />
         ) : (
           <div className="graph">
-            <div className="graph__body" style={{ height: offsets[rows.length] ?? 0 }}>
-              <Rails rows={rows} width={graph.width} />
+            <div className="graph__body" style={{ height: bodyHeight(offsets) }}>
+              <Rails rows={rows} width={graph.width} expandedIndex={expanded?.index ?? null} />
               {/* The extent rails sit behind the cards but above the graph, in the right
-                  margin — the quietest part of a row, holding only a timestamp. */}
+                  margin — the quietest part of a row, holding only a timestamp. Positions
+                  come from the same offsets the rails use, so a band stretches correctly
+                  when a detail panel opens inside it. */}
               {graph.sessions.map((session) => {
                 const first = rows.findIndex(
                   (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
@@ -138,8 +185,8 @@ export function App() {
                     r.row.commit.sha === graph.rows[session.endRow]?.commit.sha,
                 )
                 if (first === -1 || last === -1) return null
-                const top = offsets[first] ?? 0
-                const bottom = (offsets[last] ?? 0) + rowHeight(rows[last]!)
+                const top = rowTop(offsets, first)
+                const bottom = rowTop(offsets, last) + rowHeight(rows[last]!)
                 return (
                   <div
                     key={`band:${session.sessionId}`}
@@ -161,7 +208,7 @@ export function App() {
                     .filter(Boolean)
                     .join(' ')}
                   style={{
-                    top: offsets[row.index] ?? 0,
+                    top: rowTop(offsets, row.index),
                     height: rowHeight(row),
                     paddingLeft: gutterWidth(graph.width) - GUTTER_PAD / 2,
                   }}
@@ -171,6 +218,12 @@ export function App() {
                       row={row.row}
                       now={now}
                       pushes={graph.pushes[row.row.commit.sha]}
+                      expanded={expanded?.sha === row.row.commit.sha}
+                      onToggle={() =>
+                        setSelected((current) =>
+                          current === row.row.commit.sha ? null : row.row.commit.sha,
+                        )
+                      }
                     />
                   ) : row.kind === 'wip' ? (
                     <WipNode worktree={row.worktree} />
@@ -179,6 +232,24 @@ export function App() {
                   )}
                 </div>
               ))}
+              {expanded !== null && (
+                <div
+                  className="detail-slot"
+                  style={{
+                    top: detailTop(rows, offsets, expanded.index),
+                    height: DETAIL_HEIGHT,
+                    left: gutterWidth(graph.width) - GUTTER_PAD / 2,
+                  }}
+                >
+                  <CommitDetailPanel
+                    detail={detail.detail}
+                    loading={detail.loading}
+                    error={detail.error}
+                    lane={expanded.lane}
+                    onClose={close}
+                  />
+                </div>
+              )}
             </div>
             {graph.capped && (
               <p className="empty">

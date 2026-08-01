@@ -9,14 +9,31 @@ interface CommitCardProps {
   now: number
   /** Pushes that landed on this exact commit, if any. */
   pushes?: PushMarker[]
+  expanded: boolean
+  onToggle: () => void
 }
 
-export function CommitCard({ row, now, pushes }: CommitCardProps) {
+export function CommitCard({ row, now, pushes, expanded, onToggle }: CommitCardProps) {
   const { commit } = row
   const isHead = commit.refs.some((ref) => ref.isHead)
 
+  const classes = ['card']
+  if (isHead) classes.push('card--head')
+  if (expanded) classes.push('card--expanded')
+
   return (
-    <div className={isHead ? 'card card--head' : 'card'}>
+    /*
+     * A button rather than a div with a click handler: this has to be reachable by keyboard
+     * and announce its expanded state, and a native button brings both plus Enter/Space
+     * handling without reimplementing any of it.
+     */
+    <button
+      className={classes.join(' ')}
+      onClick={onToggle}
+      aria-expanded={expanded}
+      title={expanded ? 'Hide the diff' : 'Show the diff'}
+      type="button"
+    >
       <span className="card__sha">{commit.sha.slice(0, 7)}</span>
       {pushes && pushes.length > 0 && <Push pushes={pushes} now={now} />}
       {commit.refs.length > 0 && (
@@ -35,7 +52,7 @@ export function CommitCard({ row, now, pushes }: CommitCardProps) {
       <span className="card__when" title={new Date(commit.authorDate * 1000).toLocaleString()}>
         {relativeTime(commit.authorDate * 1000, now)}
       </span>
-    </div>
+    </button>
   )
 }
 

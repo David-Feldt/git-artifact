@@ -6,6 +6,24 @@ export const ROW_HEIGHT = 44
 export const LANE_WIDTH = 22
 export const GUTTER_PAD = 14
 
+/**
+ * Height of a session header row. Shorter than a commit row — it is a label, not an
+ * entry, and giving it full height would make sessions look like graph nodes.
+ */
+export const SESSION_HEADER_HEIGHT = 30
+
+/**
+ * Height of the expanded commit panel.
+ *
+ * A constant, and scrolled internally, rather than sized to its content. The rails are an
+ * SVG drawn from row geometry and the cards are HTML positioned from the same arithmetic;
+ * a content-sized panel could only be known after the browser had laid it out, so the SVG
+ * would have to be drawn a frame late and every rail below the panel would visibly snap
+ * into place. Trading an exact fit for geometry both layers can compute up front is what
+ * keeps them locked together.
+ */
+export const DETAIL_HEIGHT = 340
+
 /** Hues cycle past eight. See the palette note in theme.css for why eight. */
 export const LANE_COUNT = 8
 
@@ -17,6 +35,21 @@ export function laneX(lane: number): number {
   return GUTTER_PAD + lane * LANE_WIDTH + LANE_WIDTH / 2
 }
 
+export function gutterWidth(width: number): number {
+  return GUTTER_PAD * 2 + Math.max(width, 1) * LANE_WIDTH
+}
+
+/**
+ * A row on screen.
+ *
+ * Only `commit` rows come from `git log`. The other two are spliced in: uncommitted work
+ * has no sha, and a session header describes a range rather than a point.
+ */
+export type DisplayRow =
+  | { kind: 'commit'; row: GraphRow; index: number }
+  | { kind: 'wip'; worktree: WorktreeStatus; lane: number; index: number }
+  | { kind: 'session'; session: SessionBandInfo; index: number }
+
 /** Height of one display row. Session headers are shorter; everything else is a full row. */
 export function rowHeight(row: DisplayRow): number {
   return row.kind === 'session' ? SESSION_HEADER_HEIGHT : ROW_HEIGHT
@@ -25,58 +58,58 @@ export function rowHeight(row: DisplayRow): number {
 /**
  * Cumulative top offset of every row, plus a final entry for the total height.
  *
- * Rows used to be a uniform height, so a position was just `index * ROW_HEIGHT`. Session
- * headers broke that. Computing the offsets once and passing them down keeps the SVG rails
- * and the HTML cards reading from a single source — the failure mode otherwise is the two
- * layers drifting apart by a few pixels per header, which looks like a rendering bug
- * rather than a layout one.
+ * This is the single source of vertical geometry, and everything — the SVG rails, the HTML
+ * cards, the detail panel, the session extent rails — reads from the same array. That
+ * matters because there are now two independent reasons a row is not where
+ * `index * ROW_HEIGHT` would put it: a session header is shorter than a commit row, and an
+ * open detail panel injects a gap beneath its row. Computing each separately is how the
+ * two layers drift apart by a few pixels and it looks like a rendering bug.
  *
- * Still O(n) and still exact, so phase 7 virtualisation can slice this array rather than
- * re-measuring the DOM.
+ * Still O(n) and exact, so phase 7 virtualisation can slice this array rather than
+ * measuring the DOM.
  */
-export function rowOffsets(rows: DisplayRow[]): number[] {
+export function rowOffsets(rows: DisplayRow[], expandedIndex: number | null = null): number[] {
   const offsets = new Array<number>(rows.length + 1)
   let top = 0
   for (let i = 0; i < rows.length; i++) {
     offsets[i] = top
     top += rowHeight(rows[i]!)
+    // The panel occupies the gap opened directly under the row it belongs to.
+    if (i === expandedIndex) top += DETAIL_HEIGHT
   }
   offsets[rows.length] = top
   return offsets
 }
 
-/** Vertical centre of a row, for placing a node or an edge endpoint. */
+/** Top edge of a row. */
+export function rowTop(offsets: number[], index: number): number {
+  return offsets[index] ?? 0
+}
+
+/** Vertical centre of a row: where its node sits and its rails meet. */
 export function rowCenter(rows: DisplayRow[], offsets: number[], index: number): number {
   const top = offsets[index] ?? 0
   const row = rows[index]
   return top + (row ? rowHeight(row) : ROW_HEIGHT) / 2
 }
 
-export function gutterWidth(width: number): number {
-  return GUTTER_PAD * 2 + Math.max(width, 1) * LANE_WIDTH
+/** Top edge of the detail panel, which sits in the gap under its row. */
+export function detailTop(rows: DisplayRow[], offsets: number[], expandedIndex: number): number {
+  const row = rows[expandedIndex]
+  return (offsets[expandedIndex] ?? 0) + (row ? rowHeight(row) : ROW_HEIGHT)
+}
+
+/** Total height of the row body, including any open panel. */
+export function bodyHeight(offsets: number[]): number {
+  return offsets[offsets.length - 1] ?? 0
 }
 
 /**
- * A row on screen. Uncommitted work has no sha, so it cannot come from `git log`; it is
- * spliced in as its own kind of row directly above the commit its worktree is sitting on.
- */
-export type DisplayRow =
-  | { kind: 'commit'; row: GraphRow; index: number }
-  | { kind: 'wip'; worktree: WorktreeStatus; lane: number; index: number }
-  | { kind: 'session'; session: SessionBandInfo; index: number }
-
-/**
- * Height of a session header row. Shorter than a commit row — it is a label, not an
- * entry, and giving it full height would make sessions look like graph nodes.
- */
-export const SESSION_HEADER_HEIGHT = 30
-
-/**
- * Interleave WIP pseudo-nodes into the commit rows.
+ * Interleave WIP pseudo-nodes and session headers into the commit rows.
  *
  * Uncommitted changes belong above their worktree's HEAD, because newer sits at the top.
- * Inserting a row shifts everything below it, but not the *lane* geometry: the spliced
- * row maps every live lane straight through at the same index, so edges crossing it stay
+ * Inserting a row shifts everything below it, but not the *lane* geometry: a spliced row
+ * maps every live lane straight through at the same index, so edges crossing it stay
  * continuous and no existing edge needs rewriting.
  *
  * A worktree with a clean tree contributes nothing — an always-present empty WIP node
@@ -90,8 +123,8 @@ export function buildDisplayRows(
   const dirty = worktrees.filter((w) => w.files.length > 0)
 
   // Session headers are keyed by the *graph* row they precede, which is why this is built
-  // from `startRow` before any splicing happens — once WIP rows are interleaved the
-  // display indices no longer line up with the graph indices the server sent.
+  // before any splicing happens — once WIP rows are interleaved the display indices no
+  // longer line up with the graph indices the server sent.
   const headerBefore = new Map<number, SessionBandInfo[]>()
   for (const session of sessions) {
     const list = headerBefore.get(session.startRow)
