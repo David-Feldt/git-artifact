@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { assignLanes } from '../src/graph/lanes.js'
 import type { Commit } from '../src/graph/model.js'
 import type { GraphPayload, SessionBandInfo, WorktreeStatus } from '../src/api.js'
-import { buildDisplayRows } from '../src/client/components/layout.js'
+import { buildDisplayRows, sessionSpan, sliceRows } from '../src/client/components/layout.js'
 import { HEAT_HEX, LANE_HEX, PAPER, laneHex, mix } from '../src/client/export/palette.js'
 import { exportFilename } from '../src/client/export/download.js'
 import { fit, renderGraphSvg, type Font, type Measure } from '../src/client/export/svg.js'
@@ -241,6 +241,111 @@ describe('renderGraphSvg', () => {
   })
 })
 
+describe('scoped export', () => {
+  const session: SessionBandInfo = {
+    sessionId: 's1',
+    title: 'Understand background changes',
+    startRow: 1,
+    endRow: 2,
+    commitCount: 2,
+    promptCount: 7,
+    inputTokens: 1000,
+    outputTokens: 100,
+    model: 'claude',
+    startedAt: 0,
+    endedAt: 60_000,
+    branches: ['main'],
+  }
+
+  const scoped = () => {
+    const graph = payload(
+      [
+        c('d4', 'newest, outside the band', 'c3'),
+        c('c3', 'inside the band, newer', 'b2'),
+        c('b2', 'inside the band, older', 'a1'),
+        c('a1', 'oldest, outside the band'),
+      ],
+      { sessions: [session] },
+    )
+    const rows = buildDisplayRows(graph.rows, [], graph.sessions)
+    const span = sessionSpan(graph.rows, rows, session)!
+    return { graph, rows, span }
+  }
+
+  it('resolves a band to its display rows through the end commit sha', () => {
+    const { rows, span } = scoped()
+    // The header is spliced in above the band's first commit, so the display indices are
+    // not the graph indices the server sent.
+    expect(rows[span.first]!.kind).toBe('session')
+    expect(span.last).toBeGreaterThan(span.first)
+  })
+
+  it('renumbers a slice so its rails are drawn against the right rows', () => {
+    const { rows, span } = scoped()
+    const slice = sliceRows(rows, span.first, span.last)
+    expect(slice.map((r) => r.index)).toEqual([0, 1, 2])
+    // The originals are untouched; slicing must not mutate the live list.
+    expect(rows[span.first]!.index).toBe(span.first)
+  })
+
+  it('renders only the band, and counts only what it drew', () => {
+    const { graph, rows, span } = scoped()
+    const svg = renderGraphSvg(
+      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
+      { measure, scopeLabel: session.title! },
+    )
+
+    expect(svg).toContain('inside the band, newer')
+    expect(svg).toContain('inside the band, older')
+    expect(svg).not.toContain('outside the band')
+    // Two commits, not the repository's four.
+    expect(svg).toContain('2 commits')
+    expect(svg).not.toContain('4 commits')
+  })
+
+  it('names what it is an excerpt of, so it cannot pass as the whole history', () => {
+    const { graph, rows, span } = scoped()
+    const svg = renderGraphSvg(
+      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
+      { measure, scopeLabel: session.title! },
+    )
+    expect(svg).toContain('Understand background changes')
+    // The branch chip is replaced by the scope, not joined by it.
+    expect(svg).not.toContain('>main<')
+  })
+
+  it('clips the body so a rail leaving the last row cannot cross the footer', () => {
+    const { graph, rows, span } = scoped()
+    const svg = renderGraphSvg(
+      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
+      { measure, scopeLabel: session.title! },
+    )
+    expect(svg).toContain('<clipPath id="body">')
+    expect(svg).toContain('clip-path="url(#body)"')
+    // Nothing in a slice should produce undefined geometry.
+    expect(svg).not.toContain('NaN')
+  })
+
+  it('keeps the attribution wording on an excerpt, which is always a band', () => {
+    const { graph, rows, span } = scoped()
+    const svg = renderGraphSvg(
+      { graph, rows: sliceRows(rows, span.first, span.last), now: 1_700_000_000_000 },
+      { measure, scopeLabel: session.title! },
+    )
+    expect(svg).toContain('observed alongside')
+  })
+
+  it('drops the band note from an excerpt that has no band in it', () => {
+    const { graph, rows, span } = scoped()
+    // Commits only, header excluded.
+    const svg = renderGraphSvg(
+      { graph, rows: sliceRows(rows, span.first + 1, span.last), now: 1_700_000_000_000 },
+      { measure },
+    )
+    expect(svg).not.toContain('observed alongside')
+  })
+})
+
 describe('fit', () => {
   it('leaves text that already fits alone', () => {
     expect(fit('short', 1000, { family: 'ui', size: 13, weight: 400 }, measure)).toEqual({
@@ -304,5 +409,19 @@ describe('exportFilename', () => {
 
   it('strips anything that would be awkward in a filename', () => {
     expect(exportFilename(input('my repo/v2'), 'png')).toBe('my-repo-v2-20260801-1230.png')
+  })
+
+  it('distinguishes a scoped file from the full one it sits beside', () => {
+    expect(exportFilename(input('demo'), 'svg', 'Understand background changes')).toBe(
+      'demo-Understand-background-changes-20260801-1230.svg',
+    )
+  })
+
+  it('bounds a scope that is really a sentence', () => {
+    const long = 'A session title that simply refuses to stop going on and on and on'
+    const name = exportFilename(input('demo'), 'svg', long)
+    expect(name.length).toBeLessThan(70)
+    expect(name.endsWith('-20260801-1230.svg')).toBe(true)
+    expect(name).not.toContain('--')
   })
 })

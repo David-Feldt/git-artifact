@@ -638,6 +638,35 @@ body {
 }
 
 /*
+ * Revealed on hover or focus. A band is an annotation, not a row of controls, and a button
+ * visible on every one of them would read as the loudest thing on the graph.
+ */
+.shead__export {
+  flex: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-secondary);
+  background: var(--card);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 0 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+}
+
+.shead:hover .shead__export,
+.shead__export:focus-visible {
+  opacity: 1;
+}
+
+.shead__export:hover {
+  color: var(--ink);
+  background: var(--card-hover);
+}
+
+/*
  * The extent rail. Right margin, because that is the quietest column on a row — only a
  * relative timestamp lives there — and because a band has to show where it *stops*, or an
  * unattributed commit below it looks like part of the session.

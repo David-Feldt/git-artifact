@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RepoInfo } from '../api.js'
+import type { RepoInfo, SessionBandInfo } from '../api.js'
+import { downloadSvg } from './export/download.js'
 import { CommitCard } from './components/CommitCard.js'
 import { CommitDetailPanel } from './components/CommitDetail.js'
 import { ExportControls } from './components/ExportControls.js'
@@ -17,6 +18,8 @@ import {
   rowHeight,
   rowOffsets,
   rowTop,
+  sessionSpan,
+  sliceRows,
 } from './components/layout.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
@@ -71,6 +74,34 @@ export function App() {
   const detail = useCommitDetail(expanded?.sha ?? null)
 
   const close = useCallback(() => setSelected(null), [])
+
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  /**
+   * Save one band's commits, rather than the whole graph.
+   *
+   * A session-sized excerpt is a few hundred pixels tall where a full history runs to
+   * thousands, which is the difference between an image someone reads in a pull request and
+   * one they scroll past. The rows are renumbered by `sliceRows`, because the rails read
+   * their vertical position from a row's index within the list being drawn.
+   */
+  const exportSession = useCallback(
+    (session: SessionBandInfo) => {
+      if (graph === null) return
+      const span = sessionSpan(graph.rows, rows, session)
+      if (span === null) return
+      try {
+        setExportError(null)
+        downloadSvg(
+          { graph, rows: sliceRows(rows, span.first, span.last), now },
+          { scopeLabel: session.title ?? 'Untitled session' },
+        )
+      } catch (err) {
+        setExportError(err instanceof Error ? err.message : 'The export failed.')
+      }
+    },
+    [graph, rows, now],
+  )
 
   useEffect(() => {
     if (expanded === null) return
@@ -160,6 +191,11 @@ export function App() {
             <span>Lost contact with the git-artifact daemon. Reconnecting…</span>
           </div>
         )}
+        {exportError && (
+          <div className="banner banner--error">
+            <span>{exportError}</span>
+          </div>
+        )}
       </div>
 
       <div className="scroll" ref={scrollRef}>
@@ -230,7 +266,10 @@ export function App() {
                   ) : row.kind === 'wip' ? (
                     <WipNode worktree={row.worktree} />
                   ) : (
-                    <SessionHeader session={row.session} />
+                    <SessionHeader
+                      session={row.session}
+                      onExport={() => exportSession(row.session)}
+                    />
                   )}
                 </div>
               ))}

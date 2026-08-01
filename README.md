@@ -179,6 +179,17 @@ PNG is written at 2×, which is legible when a chat client scales it down.
 Session bands carry the "observed alongside, not authored by" wording into the file itself,
 where it is read without any of the surrounding UI to qualify it.
 
+### One session at a time
+
+Hovering a session band reveals an `export` button that saves just that band's commits. A
+five-commit band comes out around 330 px tall, where the full history of the same repository
+is 450 and a 227-commit one is 10,070 — the difference between an image someone reads in
+place in a pull request and one they scroll past.
+
+An excerpt says so rather than leaving it to be noticed: the session title takes the place
+of the branch chip in the header, and the commit count is the excerpt's own, not the
+repository's.
+
 ## How liveness works
 
 Filesystem events are a **trigger, not a source of truth**. A change under `.git` or in a

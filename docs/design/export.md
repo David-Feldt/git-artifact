@@ -223,12 +223,38 @@ The fix is `CHIP_SLACK`, six per cent on every chip's text width. Bounded, appli
 place, and the cheap direction to be wrong in: a slightly roomier chip costs nothing, and a
 branch name printed across a commit subject costs the whole artifact.
 
+## Session scope, as built
+
+An `export` button on each band, revealed on hover or focus. A band is an annotation, and a
+control permanently visible on every one of them would read as the loudest thing on the
+graph.
+
+Measured on this repository: a five-commit band came out **908 × 332 px, 9 KB**, against
+908 × 450 for the same repository entire and 996 × 10,070 for a 227-commit one. That is the
+difference the scope exists to make — an image read in place in a pull request rather than
+scrolled past.
+
+Three things it turned out to need beyond slicing the array:
+
+- **Renumbering.** A row's `index` is its position in the list being drawn, and the rails
+  read `y(row.index)` against offsets built from that same list. A plain `slice` keeps the
+  original numbers and every rail in the excerpt is drawn against the wrong row.
+- **Clipping the body.** A rail leaving the last row is drawn toward the row beneath it —
+  in a full export that is the stub running off the bottom, and in an excerpt that row is
+  simply absent, so without a clip the stub crosses the footer.
+- **Saying it is an excerpt.** The header carries the session title where the branch chip
+  would be, and the commit count is taken from the rows actually drawn rather than from
+  `graph.rows`. A file holding one session's commits, captioned only with the repository
+  name, reads as the whole of it.
+
 ## Still open
 
-1. **A scoped export.** Session scope is nearly free and not built yet; branch scope needs a
-   merge-base and an answer for repositories whose default branch is not named `main`.
+1. **Branch scope.** Needs a merge-base, and an answer for repositories whose default
+   branch is not named `main` and whose branch has no upstream.
 2. **Whether the 820 px column should be configurable.** It decides where every subject
    truncates, and long conventional-commit subjects hit it.
+3. **Scoped PNG.** The band button saves SVG only. There is no reason it cannot do both;
+   two buttons on a hover-revealed control just needed a better idea than two buttons.
 
 ---
 

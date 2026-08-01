@@ -1,4 +1,4 @@
-import type { GraphPayload, SessionBandInfo } from '../../api.js'
+import type { GraphPayload } from '../../api.js'
 import type { DisplayRow } from '../components/layout.js'
 import {
   ROW_HEIGHT,
@@ -8,6 +8,7 @@ import {
   rowHeight,
   rowOffsets,
   rowTop,
+  sessionSpan,
 } from '../components/layout.js'
 import { railNodes, railPaths } from '../components/rail-paths.js'
 import { basename, formatTokens, heatBucket, relativeTime } from '../format.js'
@@ -59,6 +60,12 @@ export interface ExportOptions {
   measure: Measure
   /** Width of the text column beside the rails. */
   cardWidth?: number
+  /**
+   * What this file is an excerpt of, when `input.rows` is a slice rather than the whole
+   * graph — a session title, say. Named in the header so an excerpt cannot be mistaken for
+   * the repository's entire history.
+   */
+  scopeLabel?: string
 }
 
 /*
@@ -135,7 +142,10 @@ export function renderGraphSvg(input: ExportInput, options: ExportOptions): stri
       `viewBox="0 0 ${round(width)} ${round(height)}" font-family="${escapeXml(UI_STACK)}">`,
   )
   out.push(`<title>${escapeXml(graph.repo.name)} — commit graph</title>`)
-  const commitCount = `${graph.rows.length} commit${graph.rows.length === 1 ? '' : 's'}`
+  // Counted from the rows actually being drawn, not from `graph.rows`, so a scoped export
+  // reports its own size rather than the whole repository's.
+  const drawn = rows.filter((row) => row.kind === 'commit').length
+  const commitCount = `${drawn} commit${drawn === 1 ? '' : 's'}`
   out.push(
     `<desc>${escapeXml(
       `${commitCount}, exported from git-artifact ${new Date(graph.generatedAt).toISOString()}`,
@@ -143,9 +153,19 @@ export function renderGraphSvg(input: ExportInput, options: ExportOptions): stri
   )
   out.push(`<rect width="${round(width)}" height="${round(height)}" fill="${PAPER}"/>`)
 
-  out.push(...renderHeader(graph, width, measure))
+  out.push(...renderHeader(graph, commitCount, options.scopeLabel, width, measure))
 
-  out.push(`<g transform="translate(0 ${HEADER_HEIGHT})">`)
+  /*
+   * The body is clipped to its own band.
+   *
+   * A rail leaving the last row is drawn toward the row below it, which in a full export is
+   * the "history continues" stub running off the bottom. In an excerpt that row is simply
+   * absent, and without a clip the stub is drawn straight through the footer.
+   */
+  out.push(
+    `<clipPath id="body"><rect x="0" y="0" width="${round(width)}" height="${round(bodyHeight)}"/></clipPath>`,
+  )
+  out.push(`<g transform="translate(0 ${HEADER_HEIGHT})" clip-path="url(#body)">`)
   out.push(...renderBands(graph, rows, offsets, width))
   out.push(...renderRails(rows, offsets))
   for (const row of rows) {
@@ -153,7 +173,7 @@ export function renderGraphSvg(input: ExportInput, options: ExportOptions): stri
   }
   out.push('</g>')
 
-  out.push(...renderFooter(graph, width, height, measure))
+  out.push(...renderFooter(graph, rows, width, height))
   out.push('</svg>')
 
   return out.join('\n')
@@ -169,7 +189,13 @@ interface RowContext {
   measure: Measure
 }
 
-function renderHeader(graph: GraphPayload, width: number, measure: Measure): string[] {
+function renderHeader(
+  graph: GraphPayload,
+  commitCount: string,
+  scopeLabel: string | undefined,
+  width: number,
+  measure: Measure,
+): string[] {
   const out: string[] = []
   const baseline = 28
   let x = 16
@@ -177,19 +203,35 @@ function renderHeader(graph: GraphPayload, width: number, measure: Measure): str
   out.push(text(x, baseline, graph.repo.name, FONT.headerName, INK))
   x += measure(graph.repo.name, FONT.headerName) + GAP + 2
 
-  const branch = graph.repo.currentBranch ?? (graph.repo.state.detachedHead ? 'detached HEAD' : null)
-  if (branch) {
-    const chip = chipAt(x, baseline - 9, branch, FONT.sessionMeta, measure, {
+  /*
+   * An excerpt says so where the branch chip would otherwise be. A file holding one
+   * session's commits and captioned only with the repository name reads as the whole of it,
+   * which is the one way a scoped export actively misleads.
+   */
+  if (scopeLabel !== undefined) {
+    const label = fit(scopeLabel, width * 0.45, FONT.sessionMeta, measure)
+    const chip = chipAt(x, baseline - 9, label.text, FONT.sessionMeta, measure, {
       fill: mix(INK_MUTED, CARD, 0.1),
       stroke: RULE_STRONG,
       ink: INK_SECONDARY,
     })
     out.push(chip.svg)
     x += chip.width + GAP
+  } else {
+    const branch =
+      graph.repo.currentBranch ?? (graph.repo.state.detachedHead ? 'detached HEAD' : null)
+    if (branch) {
+      const chip = chipAt(x, baseline - 9, branch, FONT.sessionMeta, measure, {
+        fill: mix(INK_MUTED, CARD, 0.1),
+        stroke: RULE_STRONG,
+        ink: INK_SECONDARY,
+      })
+      out.push(chip.svg)
+      x += chip.width + GAP
+    }
   }
 
-  const count = `${graph.rows.length} commit${graph.rows.length === 1 ? '' : 's'}`
-  out.push(text(x, baseline, count, FONT.headerMeta, INK_MUTED))
+  out.push(text(x, baseline, commitCount, FONT.headerMeta, INK_MUTED))
 
   // Right-anchored, so a substituted font cannot push it off the edge.
   const stamp = `as of ${new Date(graph.generatedAt).toLocaleString()}`
@@ -199,7 +241,12 @@ function renderHeader(graph: GraphPayload, width: number, measure: Measure): str
   return out
 }
 
-function renderFooter(graph: GraphPayload, width: number, height: number, measure: Measure): string[] {
+function renderFooter(
+  graph: GraphPayload,
+  rows: DisplayRow[],
+  width: number,
+  height: number,
+): string[] {
   const top = height - FOOTER_HEIGHT
   const baseline = top + 21
   const out: string[] = [line(0, top, width, top, RULE)]
@@ -213,15 +260,17 @@ function renderFooter(graph: GraphPayload, width: number, height: number, measur
    * wording. An exported artifact is read with none of that context and is the version most
    * likely to be forwarded, so the claim it makes about attribution has to be legible on
    * its face — nothing records that a session *caused* a commit.
+   *
+   * Keyed off the rows actually drawn rather than `graph.sessions`, so an excerpt without a
+   * band does not carry a note about bands, and a session-scoped excerpt always does.
    */
-  if (graph.sessions.length > 0) {
+  if (rows.some((row) => row.kind === 'session')) {
     const note = 'Session bands are observed alongside these commits, not authored by them.'
     out.push(text(width - 16, baseline, note, FONT.footer, INK_MUTED, 'end'))
   } else if (graph.capped) {
     const note = `History capped at ${graph.maxCount} commits.`
     out.push(text(width - 16, baseline, note, FONT.footer, INK_MUTED, 'end'))
   }
-  void measure
   return out
 }
 
@@ -234,7 +283,7 @@ function renderBands(
 ): string[] {
   const out: string[] = []
   for (const session of graph.sessions) {
-    const span = bandSpan(graph, rows, session)
+    const span = sessionSpan(graph.rows, rows, session)
     if (!span) continue
     const top = rowTop(offsets, span.first)
     const bottom = rowTop(offsets, span.last) + rowHeight(rows[span.last]!)
@@ -244,27 +293,6 @@ function renderBands(
     )
   }
   return out
-}
-
-/**
- * Display-row range a band covers.
- *
- * `SessionBandInfo` indexes into `graph.rows`, but WIP nodes and headers are spliced into
- * the display list, so the two index spaces diverge the moment anything is interleaved.
- * Resolving through the sha is what keeps the rail aligned with the rows it describes.
- */
-function bandSpan(
-  graph: GraphPayload,
-  rows: DisplayRow[],
-  session: SessionBandInfo,
-): { first: number; last: number } | null {
-  const first = rows.findIndex(
-    (r) => r.kind === 'session' && r.session.sessionId === session.sessionId,
-  )
-  const endSha = graph.rows[session.endRow]?.commit.sha
-  const last = rows.findIndex((r) => r.kind === 'commit' && r.row.commit.sha === endSha)
-  if (first === -1 || last === -1) return null
-  return { first, last }
 }
 
 function renderRails(rows: DisplayRow[], offsets: number[]): string[] {

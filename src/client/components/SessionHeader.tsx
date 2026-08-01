@@ -3,6 +3,8 @@ import { formatTokens } from '../format.js'
 
 interface SessionHeaderProps {
   session: SessionBandInfo
+  /** Save this band alone, or absent while the graph is still settling. */
+  onExport?: () => void
 }
 
 /**
@@ -16,7 +18,7 @@ interface SessionHeaderProps {
  * nothing records that a session *caused* a commit — so this says the commits below were
  * observed alongside the session, and never that the session wrote them.
  */
-export function SessionHeader({ session }: SessionHeaderProps) {
+export function SessionHeader({ session, onExport }: SessionHeaderProps) {
   const tokens = session.inputTokens + session.outputTokens
 
   return (
@@ -35,6 +37,22 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         <span className="shead__multi">{session.branches.length} branches</span>
       )}
       <span className="shead__rule" />
+      {onExport && (
+        /*
+         * Hidden until the row is hovered or the button is focused. A band is a label, and
+         * a control sitting permanently on every one of them would turn a quiet annotation
+         * into a toolbar. Focus is in the condition as well as hover so it stays reachable
+         * from the keyboard.
+         */
+        <button
+          className="shead__export"
+          type="button"
+          onClick={onExport}
+          title={`Save these ${session.commitCount} commit${session.commitCount === 1 ? '' : 's'} as an SVG`}
+        >
+          export
+        </button>
+      )}
     </div>
   )
 }
