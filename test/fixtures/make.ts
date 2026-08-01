@@ -215,6 +215,26 @@ export const builders: Record<string, () => string> = {
     return dir
   },
 
+  /**
+   * Two linked worktrees on branches that have genuinely diverged, so their HEADs land in
+   * different lanes.
+   *
+   * Distinct from `worktrees`, where the main checkout sits on an *ancestor* of the other
+   * branch and both HEADs legitimately share one rail. Both shapes are real and the
+   * worktree strip has to handle each.
+   */
+  worktreesDiverged() {
+    const dir = initRepo('worktrees-diverged')
+    commit(dir, 'base')
+    run(dir, ['checkout', '--quiet', '-b', 'side'])
+    commit(dir, 'side work', 'side.txt')
+    run(dir, ['checkout', '--quiet', 'main'])
+    commit(dir, 'main work', 'main.txt')
+    const linked = track(`${dir}-wt`)
+    run(dir, ['worktree', 'add', '--quiet', linked, 'side'])
+    return dir
+  },
+
   /** A second linked worktree, for the WIP-node and lane-group work. */
   worktrees() {
     const dir = initRepo('worktrees')

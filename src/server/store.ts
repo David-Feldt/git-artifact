@@ -1,9 +1,19 @@
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
-import type { GraphPayload, ProblemPayload, RepoInfo, ServerEvent, StatusPayload } from '../api.js'
+import type {
+  GraphPayload,
+  ProblemPayload,
+  PushMarker,
+  RepoInfo,
+  ServerEvent,
+  StatusPayload,
+  WorktreeLane,
+} from '../api.js'
+import type { GraphRow } from '../graph/model.js'
 import { assignLanes, graphWidth } from '../graph/lanes.js'
 import { gitOrNull } from '../git/exec.js'
 import { readLog } from '../git/log.js'
+import { readPushEvents } from '../git/reflog.js'
 import { openRepo, refreshRepo, type Repo } from '../git/repo.js'
 import { readStatus } from '../git/status.js'
 
@@ -110,6 +120,8 @@ export class GraphStore extends EventEmitter {
       this.graph = {
         repo: this.repoInfo(repo),
         rows,
+        pushes: await this.readPushes(repo),
+        worktreeLanes: this.worktreeLanes(repo, rows),
         width: graphWidth(rows),
         // A full read returns exactly the cap when there is more history behind it.
         capped: commits.length >= this.options.maxCount,
@@ -165,6 +177,52 @@ export class GraphStore extends EventEmitter {
     } catch (err) {
       this.reportProblem('Could not read the working tree status', err)
     }
+  }
+
+  /**
+   * Push events, keyed by the sha each one landed on.
+   *
+   * Reflogs expire — 90 days for reachable entries by default — so an empty result is
+   * normal for older history and never an error. Events pointing outside the loaded
+   * window are dropped rather than carried, since there is no row to attach them to.
+   */
+  private async readPushes(repo: Repo): Promise<Record<string, PushMarker[]>> {
+    const byS: Record<string, PushMarker[]> = {}
+    try {
+      for (const event of await readPushEvents(repo.commonDir)) {
+        const list = byS[event.sha]
+        const marker: PushMarker = {
+          ref: event.ref,
+          at: event.at,
+          authorName: event.authorName,
+        }
+        if (list) list.push(marker)
+        else byS[event.sha] = [marker]
+      }
+    } catch {
+      // Push markers are an enrichment; losing them must not cost us the graph.
+    }
+    return byS
+  }
+
+  /** Locate each live worktree's HEAD in the rendered rows. See {@link WorktreeLane}. */
+  private worktreeLanes(repo: Repo, rows: GraphRow[]): WorktreeLane[] {
+    const laneBySha = new Map<string, number>()
+    for (const row of rows) laneBySha.set(row.commit.sha, row.lane)
+
+    return repo.worktrees
+      .filter((w) => !w.bare && !w.prunable)
+      .map((worktree): WorktreeLane => ({
+        path: worktree.path,
+        name: path.basename(worktree.path),
+        branch: worktree.branch,
+        head: worktree.head,
+        detached: worktree.detached,
+        isMain: worktree.isMain,
+        // Null when HEAD fell outside the history cap. The UI says "off-screen" rather
+        // than silently pinning the worktree to lane 0.
+        lane: worktree.head ? (laneBySha.get(worktree.head) ?? null) : null,
+      }))
   }
 
   private reportProblem(message: string, err: unknown): void {

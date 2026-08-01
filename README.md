@@ -73,6 +73,35 @@ git-artifact [path] [options]
 History is capped at 5000 commits by default. `git log --all` unbounded on a very large
 repository would hang the first render.
 
+## Worktrees
+
+Every linked worktree gets a chip in the strip below the header, colour-keyed to the lane
+its HEAD sits in, and its own WIP node at that lane's tip. Clicking a chip scrolls to that
+worktree's HEAD.
+
+The chips **annotate** the graph rather than partitioning it, and that is a deliberate
+choice. Commits are shared history — one commit is usually reachable from every checkout —
+so carving lanes into per-worktree blocks would have to either duplicate commits or assign
+them arbitrarily. What *is* unambiguously per-worktree is the tip. Keeping it an
+annotation also preserves stable lane indices.
+
+Two worktrees can legitimately share a lane, when one is checked out at an ancestor of the
+other. That renders as two chips of the same colour, which is honest: they really are on
+the same rail at different points.
+
+## Push markers
+
+Commits that a `git push` landed on carry a `↑ pushed 2h` marker, read from the
+remote-tracking reflogs under `.git/logs/refs/remotes/`. That is the only durable local
+record of *when* work left the machine.
+
+Only the exact commit a push targeted is marked, not everything behind it. "A push
+happened here, then" is a timeline event; whether a commit is *currently* published is a
+different question, already answered per-branch by the ahead/behind counts on each chip.
+
+Reflogs expire — 90 days for reachable entries by default — so older history simply has no
+markers. That is normal, not an error.
+
 ## How liveness works
 
 Filesystem events are a **trigger, not a source of truth**. A change under `.git` or in a

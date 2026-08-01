@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RepoInfo } from '../api.js'
 import { CommitCard } from './components/CommitCard.js'
 import { Rails } from './components/Rails.js'
 import { WipNode } from './components/WipNode.js'
+import { WorktreeStrip } from './components/WorktreeStrip.js'
 import {
   GUTTER_PAD,
   ROW_HEIGHT,
@@ -32,6 +33,31 @@ export function App() {
     document.title = graph ? `${graph.repo.name} · git-artifact` : 'git-artifact'
   }, [graph])
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [focusedSha, setFocusedSha] = useState<string | null>(null)
+
+  /**
+   * Scroll a worktree's HEAD into view.
+   *
+   * Row positions are computed rather than measured — every row is exactly one
+   * ROW_HEIGHT, which is the same property that makes virtualisation drop in later — so
+   * this needs no DOM query and stays correct while the list is still rendering.
+   */
+  const revealSha = useCallback(
+    (sha: string) => {
+      const index = rows.findIndex((r) => r.kind === 'commit' && r.row.commit.sha === sha)
+      if (index === -1) return
+      setFocusedSha(sha)
+      scrollRef.current?.scrollTo({
+        // Bias upward so the target lands a third of the way down rather than at the very
+        // top, where its surrounding history would be cut off.
+        top: Math.max(0, index * ROW_HEIGHT - (scrollRef.current.clientHeight ?? 0) / 3),
+        behavior: 'smooth',
+      })
+    },
+    [rows],
+  )
+
   if (fatal) {
     return (
       <div className="app">
@@ -60,6 +86,14 @@ export function App() {
         <ConnectionBadge connection={connection} />
       </header>
 
+      {graph && (
+        <WorktreeStrip
+          lanes={graph.worktreeLanes}
+          statuses={status?.worktrees ?? []}
+          onSelect={revealSha}
+        />
+      )}
+
       <div className="banners">
         {graph && <StateBanners repo={graph.repo} capped={graph.capped} maxCount={graph.maxCount} />}
         {problem && (
@@ -75,7 +109,7 @@ export function App() {
         )}
       </div>
 
-      <div className="scroll">
+      <div className="scroll" ref={scrollRef}>
         {graph === null ? (
           <div className="empty">
             <div className="empty__title">Reading the repository…</div>
@@ -92,14 +126,24 @@ export function App() {
               {rows.map((row) => (
                 <div
                   key={row.kind === 'commit' ? row.row.commit.sha : `wip:${row.worktree.path}`}
-                  className={row.kind === 'wip' ? 'row wip' : 'row'}
+                  className={[
+                    'row',
+                    row.kind === 'wip' ? 'wip' : '',
+                    row.kind === 'commit' && row.row.commit.sha === focusedSha ? 'row--focus' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   style={{
                     top: row.index * ROW_HEIGHT,
                     paddingLeft: gutterWidth(graph.width) - GUTTER_PAD / 2,
                   }}
                 >
                   {row.kind === 'commit' ? (
-                    <CommitCard row={row.row} now={now} />
+                    <CommitCard
+                      row={row.row}
+                      now={now}
+                      pushes={graph.pushes[row.row.commit.sha]}
+                    />
                   ) : (
                     <WipNode worktree={row.worktree} />
                   )}
