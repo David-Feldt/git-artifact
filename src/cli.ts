@@ -103,10 +103,13 @@ function parseArgs(argv: string[]): Args {
 }
 
 const HELP = `
-git-artifact — live commit-graph dashboard for a git repository
+artifact — live commit-graph dashboard for a git repository
 
 Usage
-  git-artifact [path] [options]
+  artifact [path] [options]
+
+  Also installed as \`git-artifact\`, which git finds as the subcommand \`git artifact\`.
+  Note that git claims \`--help\` for its own manual, so use \`git artifact -h\` there.
 
 Options
   -C, --repo <path>     Repository to watch (default: current directory)
@@ -119,7 +122,7 @@ Options
   -h, --help            Show this message
   -v, --version         Show the version
 
-git-artifact never writes to the repository. It reads the commit graph and the working
+artifact never writes to the repository. It reads the commit graph and the working
 tree, and it sends no telemetry anywhere.
 
 Explaining a commit runs your local Claude or Codex CLI, which sends that commit's diff to

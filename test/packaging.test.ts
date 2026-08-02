@@ -121,6 +121,19 @@ describe('the published tarball', () => {
     const bin = readFileSync(path.join(unpacked, 'dist/cli.js'), 'utf8')
     expect(bin.startsWith('#!/usr/bin/env node')).toBe(true)
   })
+
+  it('installs under both names, each pointing at a file that exists', () => {
+    // `artifact` is the short form. `git-artifact` has to keep existing independently of
+    // it: git discovers subcommands by looking for a `git-<name>` binary on PATH, so
+    // dropping that entry would silently take `git artifact` away, and nothing else here
+    // would notice — the short form would still work perfectly.
+    const manifest = JSON.parse(readFileSync(path.join(unpacked, 'package.json'), 'utf8'))
+    expect(Object.keys(manifest.bin).sort()).toEqual(['artifact', 'git-artifact'])
+
+    for (const [name, target] of Object.entries(manifest.bin)) {
+      expect(tarballEntries, name).toContain(target)
+    }
+  })
 })
 
 describe('the packaged daemon', () => {

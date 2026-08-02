@@ -15,13 +15,17 @@ npx git-artifact
 
 That is the whole setup. No global install, no config file, no account.
 
-Install it properly and git picks it up as a subcommand, because the binary is named
-`git-artifact`:
+Install it properly and you get the short form:
 
 ```sh
 npm install -g git-artifact
-git artifact
+artifact
 ```
+
+It also installs as `git-artifact`, which git finds as a subcommand, so `git artifact`
+works too. One caveat there: git claims `--help` for its own manual system and will report
+*"No manual entry for git-artifact"* rather than passing it through. Use `git artifact -h`,
+or just `artifact --help`, which git never sees.
 
 To run an unreleased commit straight from GitHub — a fix that has not been published yet,
 or your own fork:
