@@ -18,6 +18,7 @@ import {
   rowOffsets,
   rowTop,
 } from './components/layout.js'
+import { faviconState, useFavicon } from './favicon.js'
 import { useCommitDetail } from './hooks/useCommitDetail.js'
 import { useSessionDetail } from './hooks/useSessionDetail.js'
 import { useGraphStream, type Connection } from './hooks/useGraphStream.js'
@@ -36,6 +37,20 @@ export function App() {
     const id = window.setInterval(() => setNow(Date.now()), 20_000)
     return () => window.clearInterval(id)
   }, [])
+
+  /*
+   * The tab icon tracks the whole repository, not the selected view — a worktree tab is a
+   * lens on the same repo, and a favicon that changed when you clicked a tab would be
+   * reporting where you are looking rather than what is true.
+   */
+  useFavicon(
+    faviconState({
+      connected: connection !== 'down',
+      loaded: graph !== null,
+      liveSession: graph?.sessions.some((s) => s.live !== null) ?? false,
+      dirtyFiles: status?.worktrees.reduce((n, w) => n + w.files.length, 0) ?? 0,
+    }),
+  )
 
   /*
    * The unified graph plus one scoped view per worktree, derived entirely on the client
