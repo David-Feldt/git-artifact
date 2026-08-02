@@ -32,9 +32,13 @@
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "npm run build:server && npm run build:client",
-    "prepublishOnly": "npm run build",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test",
     "build:server": "node scripts/build-server.mjs",
     "build:client": "vite build",
     "dev": "node scripts/dev.mjs",

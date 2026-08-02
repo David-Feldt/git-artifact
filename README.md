@@ -23,13 +23,23 @@ npm install -g git-artifact
 git artifact
 ```
 
+To install an unreleased commit straight from GitHub — a fix that has not been published
+yet, or your own fork:
+
+```sh
+npm install -g David-Feldt/git-artifact        # main
+npm install -g David-Feldt/git-artifact#<sha>  # a specific commit
+```
+
+That path clones the repo and builds it on your machine, so it needs git and takes rather
+longer than the published tarball. Prefer the registry unless you need a specific commit.
+
 To run it from a clone instead:
 
 ```sh
 git clone https://github.com/David-Feldt/git-artifact
 cd git-artifact
 npm install
-npm run build
 node dist/cli.js -C /path/to/your/repo
 ```
 
