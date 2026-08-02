@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { ArtifactService } from './artifacts/service.js'
-import { TEXT_COL, withBanner } from './banner.js'
+import { withBanner } from './banner.js'
 import { NotARepoError, openRepo } from './git/repo.js'
 import { generateToken } from './server/auth.js'
 import { startDaemon } from './server/index.js'
@@ -179,7 +179,20 @@ async function main(): Promise<void> {
         serveClient: process.env.GIT_ARTIFACT_DEV_ORIGIN === undefined,
       })
     })(),
-    { version: VERSION, repoRoot, animate: devOrigin === undefined },
+    {
+      version: VERSION,
+      repoRoot,
+      animate: devOrigin === undefined,
+      // Read once startup has finished, to swap the placeholder graph for this repository's.
+      // Best-effort by contract: the banner keeps its decorative art if any of this is absent.
+      snapshot: () => {
+        const graph = store.getGraph()
+        if (!graph) return null
+        const status = store.getStatus()
+        const main = status?.worktrees.find((w) => w.path === repoRoot) ?? status?.worktrees[0]
+        return { rows: graph.rows, dirtyFiles: main?.files.length ?? 0 }
+      },
+    },
   )
 
   const watcher = new RepoWatcher({
@@ -201,8 +214,7 @@ async function main(): Promise<void> {
   watcher.start()
 
   const repo = store.getRepo()!
-  // Lined up with the banner's text column, directly under the repository path.
-  console.log(`${' '.repeat(TEXT_COL)}${daemon.url}\n`)
+  console.log(`\n  ${daemon.url}\n`)
   for (const note of describeState(repo.state)) console.log(`  note: ${note}`)
   console.log('  read-only · no telemetry · ctrl-c to stop\n')
 
