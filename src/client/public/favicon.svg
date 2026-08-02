@@ -3,7 +3,10 @@
   <!--
     Generated from CHART_NETWORK_PATHS in src/client/icons.ts — the same glyph the artifact
     control on each commit row uses. test/favicon.test.ts asserts they still match.
-    Disc is --artifact-ready; glyph is --card.
+    Disc is the artifact-ready colour; glyph is the card colour. Note that an XML comment
+    may not contain a double hyphen, so those custom properties are named without their
+    leading dashes here — with them, the file is not valid XML and browsers refuse to
+    decode it as an image.
   -->
   <circle cx="16" cy="16" r="16" fill="#c9761a"/>
   <g transform="translate(6 6) scale(0.8333)"

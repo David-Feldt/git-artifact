@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 32 32" role="img" aria-label="git-artifact">
   <title>git-artifact</title>
   <!--
-    README icon. A copy of src/client/public/favicon.svg — the same glyph the artifact
-    control on each commit row uses — with explicit width/height added, because an SVG
-    with only a viewBox has no intrinsic size and GitHub renders it as a broken-image
-    placeholder. Disc is --artifact-ready; glyph is --card.
+    README icon. A copy of src/client/public/favicon.svg, the same glyph the artifact
+    control on each commit row uses, with an explicit width and height so it has an
+    intrinsic size when GitHub loads it into an img tag.
+    Disc is the artifact-ready colour; glyph is the card colour.
   -->
   <circle cx="16" cy="16" r="16" fill="#c9761a"/>
   <g transform="translate(6 6) scale(0.8333)"

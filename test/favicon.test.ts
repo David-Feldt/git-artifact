@@ -28,6 +28,13 @@ const indexHtml = readFileSync(
   'utf8',
 )
 
+/** Both copies of the glyph: the one the app serves, and the one the README embeds. */
+const svgs = (): Array<[string, string]> =>
+  ['../src/client/public/favicon.svg', '../docs/images/icon.svg'].map((p) => [
+    p,
+    readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8'),
+  ])
+
 describe('favicon', () => {
   it('draws the same glyph as the artifact control', () => {
     // Asserting the path data rather than "an icon is present" is the whole point — a `d`
@@ -58,6 +65,19 @@ describe('favicon', () => {
     expect(favicon).not.toContain('var(')
     expect(favicon).toContain('#c9761a') // --artifact-ready, the disc
     expect(favicon).toContain('#fdfbf7') // --card, the glyph
+  })
+
+  it('is well-formed XML, comments included', () => {
+    // An SVG is parsed as strict XML when a browser loads it as an image, and an XML comment
+    // may not contain a double hyphen. This shipped broken: the comment named the custom
+    // properties the colours come from, `--artifact-ready` and `--card`, and Chrome refused
+    // to decode the file with "the source image cannot be decoded" — invisible in every
+    // other test here, all of which read the file as text.
+    for (const [, body] of svgs()) {
+      for (const comment of body.matchAll(/<!--([\s\S]*?)-->/g)) {
+        expect(comment[1]).not.toContain('--')
+      }
+    }
   })
 
   it('is linked from the page that needs it', () => {
