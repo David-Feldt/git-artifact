@@ -16,7 +16,10 @@
   "keywords": [
     "git",
     "commit-graph",
+    "git-graph",
     "dashboard",
+    "visualization",
+    "developer-tools",
     "worktree",
     "local-first",
     "cli",

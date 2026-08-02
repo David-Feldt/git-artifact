@@ -1,9 +1,27 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/David-Feldt/git-artifact/main/docs/images/icon.svg" alt="" width="88" height="88">
+
 # git-artifact
 
-A live commit-graph dashboard for a git repository. Point it at a repo, put it on a second
-monitor, and it keeps itself up to date while you work — commits appear as you make them,
-and uncommitted edits show up as a work-in-progress node with the files you are actively
-touching highlighted.
+**A live commit-graph dashboard for a git repository.**<br>
+Read-only, local-first, no telemetry, zero runtime dependencies.
+
+[![npm](https://img.shields.io/npm/v/git-artifact?color=c9761a&label=npm)](https://www.npmjs.com/package/git-artifact)
+[![CI](https://img.shields.io/github/actions/workflow/status/David-Feldt/git-artifact/ci.yml?branch=main&label=CI)](https://github.com/David-Feldt/git-artifact/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/git-artifact?color=3c873a)](https://nodejs.org)
+![dependencies](https://img.shields.io/badge/runtime%20deps-0-3c873a)
+[![licence](https://img.shields.io/npm/l/git-artifact?color=666)](LICENSE)
+
+`git` · `commit graph` · `worktrees` · `local-first` · `read-only` · `no telemetry` · `claude code`
+
+<img src="https://raw.githubusercontent.com/David-Feldt/git-artifact/main/docs/images/dashboard.png" alt="git-artifact showing a live commit graph with lanes, merges, push markers and Claude Code session cards" width="900">
+
+</div>
+
+Point it at a repo, put it on a second monitor, and it keeps itself up to date while you
+work — commits appear as you make them, and uncommitted edits show up as a work-in-progress
+node with the files you are actively touching highlighted.
 
 ## Install
 
@@ -182,6 +200,12 @@ it.
 
 Open a commit and press **Generate artifact**. A window opens, and a page appears in it
 that says what changed, why it matters, and what to review first.
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/David-Feldt/git-artifact/main/docs/images/artifact-page.png" alt="A generated artifact page for commit 0c951bd, with the sha, author, diff size, and prose sections explaining the change" width="820">
+  <br>
+  <sub>A generated artifact page — written by Claude from a brief this project assembles.</sub>
+</div>
 
 The page is **written by Claude, not rendered by git-artifact**. This project's job is the
 brief: the diff, the session the commit was observed alongside, when it was pushed, where it
