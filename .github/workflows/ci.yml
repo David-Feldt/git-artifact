@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push makes an in-flight run for the same ref pointless, so don't pay for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # `engines` claims >=20 and esbuild targets node20, but development happens on a much
+    # newer runtime, so 20 is the version most likely to break without anyone noticing.
+    # 22 and 24 are here to catch a deprecation landing from the other direction.
+    name: node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The suite builds its own throwaway repos rather than reading this one, so a
+          # shallow clone would do. Full history is cheap here and removes a whole class of
+          # confusing failure if a test ever does reach for real history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # Deliberately the same two commands as `prepublishOnly`, in the same order, so CI
+      # and the publish gate cannot drift apart. `npm test` includes packaging.test.ts,
+      # which runs `npm pack` and boots the built CLI — that is what actually exercises
+      # Linux, since everything else here is developed on macOS.
+      - run: npm run typecheck
+      - run: npm test
