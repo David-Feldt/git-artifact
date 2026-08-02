@@ -96,4 +96,6 @@ Fixture builders cover the shapes that break naive implementations: octopus merg
 
 ## Dependencies
 
-Runtime dependencies are `chokidar` and `ignore`, and the HTTP server is hand-written with `node:http`. React and Vite are dev-only — the client is bundled. Adding a runtime dependency is a deliberate choice to weigh, not a default.
+The published package has **no runtime dependencies at all**. `chokidar` and `ignore` are the only non-dev libraries in the source, and esbuild inlines both into `dist/cli.js`, so they are declared in `devDependencies` — putting them in `dependencies` would make every `npx git-artifact` download packages the bundle never loads. The HTTP server is hand-written with `node:http`. React and Vite are dev-only — the client is bundled.
+
+`test/packaging.test.ts` asserts the packed tarball declares no `dependencies`. Adding a real runtime dependency is a deliberate choice to weigh, not a default, and it means changing that test on purpose.
