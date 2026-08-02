@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { ArtifactService } from './artifacts/service.js'
+import { TEXT_COL, withBanner } from './banner.js'
 import { NotARepoError, openRepo } from './git/repo.js'
 import { generateToken } from './server/auth.js'
 import { startDaemon } from './server/index.js'
@@ -159,20 +160,27 @@ async function main(): Promise<void> {
   }
 
   const store = new GraphStore(args.repo, { maxCount: args.maxCount, since: args.since })
-  await store.init()
-
   const token = generateToken()
   // In dev the client is served by Vite on another port, so its requests are genuinely
   // cross-origin and would otherwise be rejected. Never set this in a packaged run.
   const devOrigin = process.env.GIT_ARTIFACT_DEV_ORIGIN
-  const daemon = await startDaemon({
-    store,
-    artifacts: new ArtifactService(store, { harness: args.harness, model: args.model }),
-    token,
-    port: args.port,
-    extraOrigins: devOrigin ? [devOrigin] : undefined,
-    serveClient: process.env.GIT_ARTIFACT_DEV_ORIGIN === undefined,
-  })
+
+  // Reading the graph is the slow part of startup, so the banner plays over it rather than
+  // ahead of it. On a big repo the animation is free; on a small one it is the only wait.
+  const daemon = await withBanner(
+    (async () => {
+      await store.init()
+      return startDaemon({
+        store,
+        artifacts: new ArtifactService(store, { harness: args.harness, model: args.model }),
+        token,
+        port: args.port,
+        extraOrigins: devOrigin ? [devOrigin] : undefined,
+        serveClient: process.env.GIT_ARTIFACT_DEV_ORIGIN === undefined,
+      })
+    })(),
+    { version: VERSION, repoRoot, animate: devOrigin === undefined },
+  )
 
   const watcher = new RepoWatcher({
     repo: store.getRepo()!,
@@ -193,8 +201,8 @@ async function main(): Promise<void> {
   watcher.start()
 
   const repo = store.getRepo()!
-  console.log(`\n  git-artifact  ${repoRoot}`)
-  console.log(`  ${daemon.url}\n`)
+  // Lined up with the banner's text column, directly under the repository path.
+  console.log(`${' '.repeat(TEXT_COL)}${daemon.url}\n`)
   for (const note of describeState(repo.state)) console.log(`  note: ${note}`)
   console.log('  read-only · no telemetry · ctrl-c to stop\n')
 
