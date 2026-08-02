@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bannerLines, truncatePath, withBanner, type RepoSnapshot } from '../src/banner.js'
 import { assignLanes } from '../src/graph/lanes.js'
 import type { Commit } from '../src/graph/model.js'
@@ -158,6 +158,26 @@ describe('truncatePath', () => {
 })
 
 describe('withBanner', () => {
+  /*
+   * `isInteractive` reads the ambient environment as well as the stream, so faking
+   * `isTTY` is not enough to reach the animated path: NO_COLOR, TERM=dumb, or CI — which
+   * every CI runner sets — each send it down the static branch instead. Leaving that to
+   * the host meant the animation tests below passed on a developer laptop and failed on
+   * GitHub Actions, and would fail for anyone who runs with NO_COLOR set.
+   *
+   * Pinned for the whole block rather than per test, so the static-path cases are equally
+   * insulated from a host that happens to set none of them.
+   */
+  beforeEach(() => {
+    vi.stubEnv('CI', undefined)
+    vi.stubEnv('NO_COLOR', undefined)
+    vi.stubEnv('TERM', 'xterm-256color')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('returns the work result and prints a static block when stdout is not a TTY', async () => {
     const stream = fakeStream(false)
     const result = await withBanner(Promise.resolve('ok'), { ...OPTS, stream })
