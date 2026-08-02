@@ -23,16 +23,21 @@ npm install -g git-artifact
 git artifact
 ```
 
-To install an unreleased commit straight from GitHub — a fix that has not been published
-yet, or your own fork:
+To run an unreleased commit straight from GitHub — a fix that has not been published yet,
+or your own fork:
 
 ```sh
-npm install -g David-Feldt/git-artifact        # main
-npm install -g David-Feldt/git-artifact#<sha>  # a specific commit
+npx github:David-Feldt/git-artifact        # main
+npx github:David-Feldt/git-artifact#<sha>  # a specific commit
 ```
 
-That path clones the repo and builds it on your machine, so it needs git and takes rather
-longer than the published tarball. Prefer the registry unless you need a specific commit.
+That clones the repo and builds it on your machine, so it needs git and a moment longer
+than the published tarball. Prefer the registry unless you want a particular commit.
+
+Note that `npm install -g` does **not** work against a git URL: npm skips the package's
+devDependencies before running its build, so the build cannot run. This is npm's
+behaviour rather than something this package can fix. Use `npx` as above, or install the
+published version globally.
 
 To run it from a clone instead:
 
