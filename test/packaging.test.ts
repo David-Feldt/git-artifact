@@ -34,9 +34,25 @@ beforeAll(() => {
   const scratch = mkdtempSync(path.join(tmpdir(), 'git-artifact-pack-'))
   const { version } = JSON.parse(readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'))
 
+  /*
+   * npm passes its configuration to child processes through `npm_config_*` environment
+   * variables, and this suite runs inside `prepublishOnly` — so a `npm publish --dry-run`
+   * exports `npm_config_dry_run=true`, the nested pack below inherits it, prints a
+   * filename, and writes no tarball. The test then fails inside the one command it exists
+   * to protect, which is worse than not having it.
+   *
+   * Strip the whole namespace rather than overriding the single flag: anything the parent
+   * invocation happens to be configured with is the wrong input here. What this must pack
+   * is the tarball a user downloads, under default configuration.
+   */
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.toLowerCase().startsWith('npm_config_')),
+  )
+
   execFileSync('npm', ['pack', '--pack-destination', scratch], {
     cwd: REPO_ROOT,
     stdio: 'pipe',
+    env,
   })
 
   const tarball = path.join(scratch, `git-artifact-${version}.tgz`)
