@@ -2,6 +2,14 @@
 
 Design for phase 4: showing which Claude Code session produced which commits.
 
+> **Outcome: bands were built, then removed.** The attribution below works until two
+> sessions overlap, and measured on this repository's own history four pairs did — commits
+> landed under the wrong session, and a band cannot represent the overlap even when it
+> guesses right, because one commit gets exactly one owner. Concurrent work rendered as
+> tidy sequential blocks: cleaner than the truth, which is worse than visibly wrong. Sessions
+> are now cards above the graph that claim no commits at all. This document is kept for the
+> measurements and for anyone tempted to try attribution again.
+
 Rendered version, with the four encodings drawn at real scale:
 <https://claude.ai/code/artifact/6c884543-f899-4a71-a8d0-522e07a8dc63>
 

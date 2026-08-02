@@ -41,9 +41,16 @@ artifact
 ```
 
 It also installs as `git-artifact`, which git finds as a subcommand, so `git artifact`
-works too. One caveat there: git claims `--help` for its own manual system and will report
-*"No manual entry for git-artifact"* rather than passing it through. Use `git artifact -h`,
-or just `artifact --help`, which git never sees.
+works too.
+
+<details>
+<summary>Running an unreleased commit, and the <code>git artifact --help</code> caveat</summary>
+
+<br>
+
+git claims `--help` for its own manual system and will report *"No manual entry for
+git-artifact"* rather than passing it through. Use `git artifact -h`, or just
+`artifact --help`, which git never sees.
 
 To run an unreleased commit straight from GitHub — a fix that has not been published yet,
 or your own fork:
@@ -69,6 +76,8 @@ cd git-artifact
 npm install
 node dist/cli.js -C /path/to/your/repo
 ```
+
+</details>
 
 ---
 
@@ -144,28 +153,23 @@ Every linked worktree gets a chip in the strip below the header, colour-keyed to
 its HEAD sits in, and its own WIP node at that lane's tip. Clicking a chip scrolls to that
 worktree's HEAD.
 
-The chips **annotate** the graph rather than partitioning it, and that is a deliberate
-choice. Commits are shared history — one commit is usually reachable from every checkout —
-so carving lanes into per-worktree blocks would have to either duplicate commits or assign
-them arbitrarily. What *is* unambiguously per-worktree is the tip. Keeping it an
-annotation also preserves stable lane indices.
-
-Two worktrees can legitimately share a lane, when one is checked out at an ancestor of the
-other. That renders as two chips of the same colour, which is honest: they really are on
-the same rail at different points.
+The chips **annotate** the graph rather than partitioning it. Commits are shared history, so
+carving lanes into per-worktree blocks would have to either duplicate commits or assign them
+arbitrarily; what *is* unambiguously per-worktree is the tip. Two worktrees can legitimately
+share a lane when one sits at an ancestor of the other, and that renders as two chips of the
+same colour — honest, because they really are on the same rail at different points.
+Reasoning in [`docs/design/worktree-tabs.md`](docs/design/worktree-tabs.md).
 
 ## Push markers
 
 Commits that a `git push` landed on carry a `↑ pushed 2h` marker, read from the
-remote-tracking reflogs under `.git/logs/refs/remotes/`. That is the only durable local
-record of *when* work left the machine.
+remote-tracking reflogs under `.git/logs/refs/remotes/` — the only durable local record of
+*when* work left the machine.
 
-Only the exact commit a push targeted is marked, not everything behind it. "A push
-happened here, then" is a timeline event; whether a commit is *currently* published is a
-different question, already answered per-branch by the ahead/behind counts on each chip.
-
-Reflogs expire — 90 days for reachable entries by default — so older history simply has no
-markers. That is normal, not an error.
+Only the exact commit a push targeted is marked, not everything behind it. "A push happened
+here, then" is a timeline event; whether a commit is *currently* published is a different
+question, already answered by the ahead/behind counts on each chip. Reflogs expire (90 days
+by default), so older history simply has no markers.
 
 ## Sessions
 
@@ -178,17 +182,11 @@ session carries a dot and what it is doing right now.
 `gitBranch` stamped on every record, so "this session worked on `export`" is a fact.
 
 Cards are deliberately **not** joined to the commits below them, and that is the main thing
-worth knowing. Sessions used to be drawn as bands claiming a contiguous run of commits, which
-required knowing which session produced which commit — and nothing records that. It was
-inferred from timing, which works until two sessions run at once, and then "whichever was
-active most recently" decides on a margin of milliseconds. Measured on this repository's own
-history, four pairs of sessions overlapped and commits landed under the wrong session.
-
-The band could not even represent the overlap when it guessed right: one commit gets exactly
-one owner, so concurrent work rendered as tidy sequential blocks. The picture came out
-cleaner than the truth — not visibly wrong, which is worse. So the claim was dropped rather
-than dressed up. Measurements and the reasoning that led here are in
-[`docs/design/session-bands.md`](docs/design/session-bands.md).
+worth knowing. Sessions were once drawn as bands claiming a run of commits, which requires
+knowing which session produced which commit — and nothing records that. Inferring it from
+timing breaks as soon as two sessions overlap, and on this repository's own history four
+pairs did. The claim was dropped rather than dressed up; measurements and the full argument
+are in [`docs/design/session-bands.md`](docs/design/session-bands.md).
 
 Everything about Claude Code lives in `src/sources/claude-code.ts`. The transcript format
 is not a stable public contract, so a format change is a one-file fix. If Claude Code is
@@ -217,22 +215,18 @@ A popup rather than a panel because these are pages you keep open, put on anothe
 and compare. The window is named after the commit, so asking twice focuses the one already
 open instead of stacking a second.
 
+**There is no oracle here.** Lane assignment can be checked against `git log --graph`, which
+is why the graph is confidently correct. Nothing checks an explanation. A model can be
+fluently wrong about a diff and this tool cannot tell, so read them as a well-informed first
+pass, not as ground truth.
+
 ### The budget, which is the whole difficulty
 
-Putting the diff in the prompt is the obvious plan and it fails. Measured across the 196
-non-merge commits of the largest repository on this machine, the median diff is **237
-tokens** and the largest is **21.3 million**. Every commit in *this* repository sits between
-1.8k and 21k, which is exactly why the problem is invisible from inside it.
-
-Dropping binary files is the obvious fix and is not sufficient — the second-worst commit
-measured contains **no binary files at all**, just one 135,037-line text STEP file that git
-diffs happily.
-
-So diffs are admitted **smallest first**. `git show` fills its byte ceiling positionally, so
-one generated file early in a commit consumes everything and every file after it arrives
-empty; admitting smallest-first spends the budget on the twenty ordinary source files
-instead of the one CAD export. Above a per-file ceiling a diff is cut short rather than
-allowed to own the budget.
+Putting the diff in the prompt is the obvious plan and it fails: measured across a real
+repository, the median commit diff is **237 tokens** and the largest is **21.3 million**.
+Dropping binary files does not fix it — the second-worst commit measured contains none, just
+one 135,037-line text STEP file that git diffs happily. So diffs are admitted **smallest
+first**, which spends the budget on twenty ordinary source files instead of one CAD export.
 
 One invariant holds throughout:
 
@@ -240,30 +234,22 @@ One invariant holds throughout:
 
 A page can always say correctly which files changed and by how much. When bodies are
 dropped, the brief says so and the page is told to say so too — silently describing only the
-files that happened to fit would be wrong in a way nobody could see.
+files that happened to fit would be wrong in a way nobody could see. Measurements and the
+full budget policy are in [`docs/design/artifacts.md`](docs/design/artifacts.md).
 
-### What it will not claim
+### What it will not claim, and what it costs
 
-The page is told, in the same words used everywhere else here, that a session is **observed
-alongside** a commit and never its author; that it must not invent tickets, discussions or
-intentions the brief does not contain; that a merge diff is against the first parent; and
-that only the repository *name* may appear, never a path.
+The page is told that a session is **observed alongside** a commit and never its author;
+that it must not invent tickets, discussions or intentions the brief does not contain; that
+a merge diff is against the first parent; and that only the repository *name* may appear,
+never a path. Those constraints live in `src/artifacts/page-spec.ts`, a plain file you can
+read and change.
 
-Those constraints live in `src/artifacts/page-spec.ts`, which is a plain file you can read
-and change.
-
-### Cost and caching
-
-Generation takes on the order of a minute or two and spends real tokens, so a page is
-written once and reused. The cache key is the **brief**, not the sha: a commit is immutable
-but its brief is not — session attribution shifts when a transcript is written later, and a
-push marker appears when the work leaves the machine. Keying on the sha alone would serve a
-stale page that no longer matches the graph beside it.
-
-**There is no oracle here.** Lane assignment could be checked against `git log --graph`,
-which is why the graph is confidently correct. Nothing checks an explanation. A model can be
-fluently wrong about a diff, and this tool cannot tell. Read them as a well-informed
-first pass, not as ground truth.
+Generation takes a minute or two and spends real tokens, so a page is written once and
+reused. The cache key is the **brief**, not the sha: a commit is immutable but its brief is
+not — session attribution shifts when a transcript is written later, and a push marker
+appears when the work leaves the machine. Keying on the sha alone would serve a stale page
+that no longer matches the graph beside it.
 
 ## How liveness works
 
@@ -310,41 +296,24 @@ npm run typecheck
 npm run build
 ```
 
-### Testing approach
+`git log --graph` ships everywhere, which makes it a free oracle for lane assignment. The
+suite builds ten throwaway repositories — linear, branch+merge, octopus, two roots,
+detached HEAD, mid-rebase, mid-merge, empty, bare, shallow — with pinned timestamps so shas
+are stable, and checks each against git's own output.
 
-`git log --graph` ships on every machine that will ever run this, which makes it a free
-reference implementation for lane assignment. The test suite generates ten throwaway
-repositories — linear, branch+merge, octopus, two roots, detached HEAD, mid-rebase,
-mid-merge, empty, bare, shallow — with pinned timestamps so shas are stable, and compares
-against git's own output on each.
+One deliberate disagreement: when a lane closes git slides every lane left, and this graph
+does not, because sliding would make unrelated branches jump sideways whenever some other
+branch merged. Lanes keep their column for life. That, the exact test assertions, and where
+the lane colours came from are in [`docs/design/graph.md`](docs/design/graph.md).
 
-Commit order is asserted exactly everywhere. Lane indices are asserted exactly on the
-fixtures. On real history the lane *indices* are allowed to differ, because git compacts
-columns when a lane closes and git-artifact deliberately does not — see below — but the
-graph must never come out wider than git's.
+### Design notes
 
-### One deliberate difference from `git log --graph`
-
-When a lane closes, git slides every lane to its right one column left. That is ideal for
-a one-shot terminal dump. This graph re-renders live, so sliding would make unrelated
-branches jump sideways every time some other branch got merged — so lanes keep their
-column for life, and freed columns are reused leftmost-first.
-
-The cost is an occasional transient empty column. Measured against a real 316-commit
-repository, the maximum width came out *narrower* than git's (4 vs 5), so nothing is lost
-in practice.
-
-## Colour
-
-Lane colours are not hand-picked. All 40,320 orderings of eight hues were scored against
-the tan surface with the colour-vision validator, optimising so the first four slots clear
-the all-pairs gates — four being both the maximum any subset of these hues can reach and
-the widest a real graph got in testing. All eight clear the adjacent-pair gates. The hues
-are stepped darker than a typical light-surface palette because rails are thin 2 px marks
-and need the contrast.
-
-Activity heat is a separate, single-hue sequential ramp, scoped to the file chips inside a
-WIP node so it can never be confused with a lane.
+| | |
+|---|---|
+| [`graph.md`](docs/design/graph.md) | Lane assignment, the `git log --graph` oracle, colour |
+| [`artifacts.md`](docs/design/artifacts.md) | The brief, the token budget, page constraints |
+| [`session-bands.md`](docs/design/session-bands.md) | Session attribution, and why bands were dropped |
+| [`worktree-tabs.md`](docs/design/worktree-tabs.md) | One render per checkout |
 
 ## Licence
 
