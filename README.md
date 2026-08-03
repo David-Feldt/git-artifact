@@ -131,7 +131,7 @@ is negligible, and neither the Origin nor the Host check depends on it.
 ## Options
 
 ```
-git-artifact [path] [options]
+artifact [path] [options]
 
   -C, --repo <path>     Repository to watch (default: current directory)
   -p, --port <n>        Preferred port; the next free one is used if taken (default: 7373)
